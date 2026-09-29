@@ -7,9 +7,17 @@ import Clientes from './components/Clientes.jsx';
 import Buses from './components/Buses.jsx';
 import Ubicaciones from './components/Ubicaciones.jsx';
 import Entregas from './components/Entregas.jsx';
+import Cuentas from './components/Cuentas.jsx';
 import SolicitudesEntrega from './components/SolicitudesEntrega.jsx';
 import Ventas from './components/Ventas.jsx';
 import ReporteVentas from './components/ReporteVentas.jsx';
+
+// Pestaña inicial según tipo de usuario
+function tabInicial(rol) {
+  if (rol === 'registro') return 'registro';
+  if (rol === 'entregas') return 'entregas';
+  return 'config';
+}
 
 export default function App() {
   const [sesion, setSesion] = useState(null);
@@ -39,7 +47,7 @@ export default function App() {
 
   useEffect(() => {
     api.get('/api/me')
-      .then((me) => { setSesion(me); cargarDatos(); })
+      .then((me) => { setSesion(me); setTab(tabInicial(me.profile?.rol)); cargarDatos(); })
       .catch(() => setSesion(null))
       .finally(() => setCargando(false));
   }, []);
@@ -64,9 +72,14 @@ export default function App() {
   };
 
   if (cargando) return <div className="app"><p>Cargando...</p></div>;
-  if (!sesion) return <div className="app"><Login onAuth={(me) => { setSesion(me); cargarDatos(); }} /></div>;
+  if (!sesion) return <div className="app"><Login onAuth={(me) => { setSesion(me); setTab(tabInicial(me.profile?.rol)); cargarDatos(); }} /></div>;
 
-  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'ubicaciones', 'lugares_entrega'].includes(tab);
+  // Tipo de usuario: admin (todo), registro (solo Registro), entregas (solo Entregas)
+  const rol = sesion.profile?.rol || 'admin';
+  const esAdmin = rol === 'admin';
+  const puede = (t) => esAdmin || (rol === 'registro' && t === 'registro') || (rol === 'entregas' && t === 'entregas');
+
+  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'ubicaciones', 'lugares_entrega', 'cuentas'].includes(tab);
   const irTab = (t) => {
     setTab(t);
     setMenuAbierto(false);
@@ -78,6 +91,7 @@ export default function App() {
     if (opcion === 'buses') irTab('buses');
     if (opcion === 'ubicaciones') irTab('ubicaciones');
     if (opcion === 'lugares_entrega') irTab('lugares_entrega');
+    if (opcion === 'cuentas') irTab('cuentas');
   };
 
   const nombre = sesion.profile?.full_name || sesion.user?.email;
@@ -87,6 +101,7 @@ export default function App() {
       <div className="topbar">
         <div className="logo" title="JC"><img src="/JC.jpeg" alt="JC" /></div>
         <div className="tabs" onClick={(e) => e.stopPropagation()}>
+          {esAdmin && (
           <div className="dropdown">
             <button
               className={'tab-btn' + (enConfig ? ' active' : '')}
@@ -101,12 +116,14 @@ export default function App() {
               <button onClick={() => elegirConfig('buses')}>🚌 Registro de Buses</button>
               <button onClick={() => elegirConfig('ubicaciones')}>📍 Ubicación del Producto</button>
               <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Registro de Entregas</button>
+              <button onClick={() => elegirConfig('cuentas')}>🔑 Administrar Cuentas</button>
             </div>
           </div>
-          <button className={'tab-btn' + (tab === 'registro' ? ' active' : '')} onClick={() => irTab('registro')}>📦 Registro</button>
-          <button className={'tab-btn' + (tab === 'ventas' ? ' active' : '')} onClick={() => irTab('ventas')}>💰 Ventas</button>
-          <button className={'tab-btn' + (tab === 'entregas' ? ' active' : '')} onClick={() => irTab('entregas')}>🚚 Entregas</button>
-          <button className={'tab-btn' + (tab === 'reportes' ? ' active' : '')} onClick={() => irTab('reportes')}>📊 Reportes</button>
+          )}
+          {puede('registro') && <button className={'tab-btn' + (tab === 'registro' ? ' active' : '')} onClick={() => irTab('registro')}>📦 Registro</button>}
+          {esAdmin && <button className={'tab-btn' + (tab === 'ventas' ? ' active' : '')} onClick={() => irTab('ventas')}>💰 Ventas</button>}
+          {puede('entregas') && <button className={'tab-btn' + (tab === 'entregas' ? ' active' : '')} onClick={() => irTab('entregas')}>🚚 Entregas</button>}
+          {esAdmin && <button className={'tab-btn' + (tab === 'reportes' ? ' active' : '')} onClick={() => irTab('reportes')}>📊 Reportes</button>}
         </div>
         <div className="userbox">
           <div><strong>{nombre}</strong></div>
@@ -117,7 +134,7 @@ export default function App() {
       {msg?.tipo === 'exito' && <p className="success">{msg.texto}</p>}
       {msg?.tipo === 'error' && <p className="error">{msg.texto}</p>}
 
-      {tab === 'config' && (
+      {esAdmin && tab === 'config' && (
         <div className="card">
           <h2>⚙️ Configuración</h2>
           {verCuadre && (
@@ -129,27 +146,31 @@ export default function App() {
         </div>
       )}
 
-      {tab === 'fardos' && (
+      {esAdmin && tab === 'fardos' && (
         <Fardos fardos={fardos} recargar={cargarDatos} avisar={avisar} />
       )}
 
-      {tab === 'clientes' && (
+      {esAdmin && tab === 'clientes' && (
         <Clientes avisar={avisar} />
       )}
 
-      {tab === 'buses' && (
+      {esAdmin && tab === 'buses' && (
         <Buses avisar={avisar} />
       )}
 
-      {tab === 'ubicaciones' && (
+      {esAdmin && tab === 'ubicaciones' && (
         <Ubicaciones avisar={avisar} />
       )}
 
-      {tab === 'lugares_entrega' && (
+      {esAdmin && tab === 'lugares_entrega' && (
         <Entregas avisar={avisar} />
       )}
 
-      {tab === 'registro' && (
+      {esAdmin && tab === 'cuentas' && (
+        <Cuentas avisar={avisar} />
+      )}
+
+      {puede('registro') && tab === 'registro' && (
         <RegistroProducto
           fardos={fardos}
           productos={productos}
@@ -160,15 +181,15 @@ export default function App() {
         />
       )}
 
-      {tab === 'ventas' && (
+      {esAdmin && tab === 'ventas' && (
         <Ventas fardos={fardos} avisar={avisar} />
       )}
 
-      {tab === 'entregas' && (
+      {puede('entregas') && tab === 'entregas' && (
         <SolicitudesEntrega avisar={avisar} />
       )}
 
-      {tab === 'reportes' && (
+      {esAdmin && tab === 'reportes' && (
         <ReporteVentas avisar={avisar} />
       )}
     </div>

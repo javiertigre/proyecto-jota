@@ -85,6 +85,60 @@ async function route(method, rawPath, body) {
   }
   if (method === 'GET' && path === '/api/me') return me();
 
+  // ----- Cuentas (administración de usuarios) -----
+  if (method === 'GET' && path === '/api/cuentas') {
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(200);
+    if (error) throw new Error(error.message);
+    return { cuentas: data || [] };
+  }
+  if (method === 'POST' && path === '/api/cuentas') {
+    const { email, password, full_name, rol } = body || {};
+    if (!email || !password || !full_name) throw new Error('Correo, contraseña y nombre son obligatorios.');
+    if (rol && !['admin', 'registro', 'entregas'].includes(rol)) throw new Error('Rol inválido.');
+    // Guardar sesión actual: crear el usuario no debe sacarnos de nuestra cuenta
+    const { data: { session: actual } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.signUp({
+      email: String(email).trim(), password, options: { data: { full_name: String(full_name).trim() } }
+    });
+    if (error) throw new Error(error.message);
+    try {
+      if (actual) {
+        await supabase.auth.setSession({ access_token: actual.access_token, refresh_token: actual.refresh_token });
+      } else {
+        await supabase.auth.signOut();
+      }
+    } catch { /* sigue: la cuenta ya fue creada */ }
+    // Asegurar fila en profiles (por si no hay trigger automático)
+    try {
+      if (data.user && data.user.id) {
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          full_name: String(full_name).trim(),
+          email: String(email).trim(),
+          rol: rol || 'registro'
+        });
+      }
+    } catch { /* el trigger pudo crearla */ }
+    return { ok: true };
+  }
+  if ((m = path.match(/^\/api\/cuentas\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
+    if (method === 'DELETE') {
+      const { data, error } = await supabase.from('profiles').delete().eq('id', m[1]).select();
+      if (error) throw new Error(error.message);
+      if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+      return { ok: true };
+    }
+    const { full_name, rol } = body || {};
+    if (!full_name || !String(full_name).trim()) throw new Error('El nombre es obligatorio.');
+    if (rol && !['admin', 'registro', 'entregas'].includes(rol)) throw new Error('Rol inválido.');
+    const cambios = { full_name: String(full_name).trim() };
+    if (rol) cambios.rol = rol;
+    const { data, error } = await supabase.from('profiles').update(cambios).eq('id', m[1]).select();
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+    return { ok: true, cuenta: data[0] };
+  }
+
   // ----- Fardos -----
   if (method === 'GET' && path === '/api/fardos') {
     const { data, error } = await supabase.from('fardos').select('*').order('fecha_creacion', { ascending: false });
