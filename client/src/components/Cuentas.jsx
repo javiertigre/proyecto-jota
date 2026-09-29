@@ -28,8 +28,12 @@ export default function Cuentas({ avisar }) {
   const guardar = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/api/cuentas', form);
-      avisar('exito', 'Cuenta creada. El usuario ya puede iniciar sesión.');
+      const r = await api.post('/api/cuentas', form);
+      if (r.perfilOk === false) {
+        avisar('error', 'Cuenta creada, pero NO aparece en la lista (' + (r.perfilError || 'sin permiso') + '). Ejecuta RLS.sql y CUENTAS_ROL.sql en Supabase.');
+      } else {
+        avisar('exito', 'Cuenta creada. El usuario ya puede iniciar sesión.');
+      }
       setForm(vacio);
       cargar();
     } catch (err) {

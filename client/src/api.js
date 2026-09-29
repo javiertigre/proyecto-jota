@@ -53,7 +53,21 @@ const esLaPaz = (ciudad) => String(ciudad || '').trim().toUpperCase() === 'LA PA
 async function me() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('No autenticado.');
-  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  // Auto-reparación: si el usuario no tiene fila en profiles, crearla (así aparece en Cuentas)
+  if (!profile) {
+    const base = { id: user.id, full_name: user.user_metadata?.full_name || '', email: user.email || '' };
+    try {
+      const r = await supabase.from('profiles').upsert({ ...base, rol: 'registro' }).select().single();
+      if (!r.error) profile = r.data;
+    } catch { /* columnas aún no creadas: intenta mínimo */ }
+    if (!profile) {
+      try {
+        const r2 = await supabase.from('profiles').upsert(base).select().single();
+        if (!r2.error) profile = r2.data;
+      } catch { /* RLS o tabla sin permiso: se muestra sin perfil */ }
+    }
+  }
   return { user, profile: profile || {} };
 }
 
@@ -109,17 +123,34 @@ async function route(method, rawPath, body) {
       }
     } catch { /* sigue: la cuenta ya fue creada */ }
     // Asegurar fila en profiles (por si no hay trigger automático)
+    let perfilOk = true;
+    let perfilError = '';
     try {
       if (data.user && data.user.id) {
-        await supabase.from('profiles').upsert({
+        const r = await supabase.from('profiles').upsert({
           id: data.user.id,
           full_name: String(full_name).trim(),
           email: String(email).trim(),
           rol: rol || 'registro'
-        });
+        }).select().single();
+        if (r.error) throw r.error;
       }
-    } catch { /* el trigger pudo crearla */ }
-    return { ok: true };
+    } catch (e) {
+      // Reintento sin columnas nuevas (por si falta ejecutar CUENTAS_ROL.sql)
+      try {
+        if (data.user && data.user.id) {
+          const r2 = await supabase.from('profiles').upsert({
+            id: data.user.id,
+            full_name: String(full_name).trim()
+          }).select().single();
+          if (r2.error) throw r2.error;
+        }
+      } catch (e2) {
+        perfilOk = false;
+        perfilError = e2.message || 'sin permiso';
+      }
+    }
+    return { ok: true, perfilOk, perfilError };
   }
   if ((m = path.match(/^\/api\/cuentas\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
     if (method === 'DELETE') {
