@@ -11,13 +11,13 @@ export default function Paginacion({ total, pagina, setPagina, porPagina = 10 })
   for (let i = inicio; i <= Math.min(paginas, inicio + 6); i++) nums.push(i);
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', marginTop: 15, flexWrap: 'wrap' }}>
+    <div className="paginacion">
       <button disabled={pagina <= 1} onClick={() => ir(pagina - 1)}>← Anterior</button>
       {nums.map((n) => (
         <button
           key={n}
           onClick={() => ir(n)}
-          style={n === pagina ? { background: '#16a34a', color: '#fff' } : {}}
+          className={n === pagina ? 'pag-active' : ''}
         >
           {n}
         </button>

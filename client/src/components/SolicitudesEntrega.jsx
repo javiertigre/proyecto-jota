@@ -34,12 +34,18 @@ export default function SolicitudesEntrega({ avisar }) {
       const params = new URLSearchParams();
       if (cel) params.set('celular', cel);
       if (nom) params.set('nombre', nom);
-      if (fechaEntrega) params.set('fecha_entrega', fechaEntrega);
+      // Por celular/nombre: trae todo lo pendiente (P o D) sin filtrar por fecha.
+      // Solo se filtra por fecha cuando se busca únicamente por fecha.
+      if (!cel && !nom && fechaEntrega) params.set('fecha_entrega', fechaEntrega);
       const r = await api.get('/api/solicitudes?' + params.toString());
       setItems(r.items || []);
       setBuscado(true);
       setEditando(null);
-      if (!r.items || !r.items.length) avisar('error', 'No se encontraron entregas para esa búsqueda.');
+      if (!r.items || !r.items.length) {
+        avisar('error', (cel || nom)
+          ? 'Ese cliente no tiene productos pendientes (P o D).'
+          : 'No se encontraron entregas para esa búsqueda.');
+      }
     } catch (err) {
       avisar('error', err.message);
     } finally {
@@ -262,9 +268,9 @@ export default function SolicitudesEntrega({ avisar }) {
             />
           </div>
           <div>
-            <label>Fecha de entrega (filtra y se graba al entregar)</label>
+            <label>Fecha de entrega (se graba al entregar)</label>
             <input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} />
-            <small className="hint">Puedes buscar solo por fecha, sin celular ni nombre.</small>
+            <small className="hint">Por celular/nombre se listan todos sus pendientes (P o D). La fecha solo filtra si buscas sin celular ni nombre.</small>
           </div>
           <div className="full">
             <button className="btn-primary" disabled={buscando}>{buscando ? 'Buscando...' : 'Buscar'}</button>
@@ -274,7 +280,7 @@ export default function SolicitudesEntrega({ avisar }) {
 
       {buscado && (
         <div className="card">
-          <h2>📋 Lista de Entregas — {fechaEntrega || 'todas'} ({items.length})</h2>
+          <h2>📋 Lista de Entregas — {(celular.trim() || nombre.trim()) ? ('pendientes de ' + (celular.trim() || nombre.trim())) : (fechaEntrega || 'todas')} ({items.length})</h2>
           {items.length > 0 && (
             <div className="actions" style={{ marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <button className="btn-entregar" onClick={excelLaPaz}>📥 Excel La Paz</button>
@@ -296,23 +302,23 @@ export default function SolicitudesEntrega({ avisar }) {
                     const esEntregado = it.venta?.estado === 'E';
                     return (
                       <tr key={it.producto_id}>
-                        <td>{it.foto_url ? <a href={it.foto_url} target="_blank" rel="noreferrer"><img className="thumb" loading="lazy" src={it.foto_url} alt={it.nombre_foto} /></a> : '—'}</td>
-                        <td>{it.nombre_foto} (Bs {it.precio})</td>
-                        <td>{it.codigo_fardo} — {it.nombre_fardo}</td>
-                        <td>{it.venta?.nombre_cliente || '—'}</td>
-                        <td>{it.venta?.ciudad || '—'}</td>
-                        <td>{it.venta?.ubicacion || '—'}</td>
-                        <td>{esEntregado ? 'Entregado (E)' : it.venta?.estado === 'P' ? 'Pendiente (P)' : it.venta?.estado === 'D' ? 'Deuda (D)' : (it.venta?.estado || '—')}</td>
-                        <td>{it.venta?.observacion || '—'}</td>
-                        <td>{it.venta?.fecha_entrega || '—'}</td>
-                        <td>{it.entrega ? it.entrega_texto : 'Sin registrar'}</td>
-                        <td className="actions">
+                        <td data-label="Foto">{it.foto_url ? <a href={it.foto_url} target="_blank" rel="noreferrer"><img className="thumb" loading="lazy" src={it.foto_url} alt={it.nombre_foto} /></a> : '—'}</td>
+                        <td data-label="Producto">{it.nombre_foto} (Bs {it.precio})</td>
+                        <td data-label="Fardo">{it.codigo_fardo} — {it.nombre_fardo}</td>
+                        <td data-label="Cliente">{it.venta?.nombre_cliente || '—'}</td>
+                        <td data-label="Ciudad">{it.venta?.ciudad || '—'}</td>
+                        <td data-label="Se encuentra en">{it.venta?.ubicacion || '—'}</td>
+                        <td data-label="Estado">{esEntregado ? 'Entregado (E)' : it.venta?.estado === 'P' ? 'Pendiente (P)' : it.venta?.estado === 'D' ? 'Deuda (D)' : (it.venta?.estado || '—')}</td>
+                        <td data-label="Observaciones">{it.venta?.observacion || '—'}</td>
+                        <td data-label="Fecha Entrega">{it.venta?.fecha_entrega || '—'}</td>
+                        <td data-label="Entrega">{it.entrega ? it.entrega_texto : 'Sin registrar'}</td>
+                        <td data-label="Acciones" className="actions">
                           {esEntregado ? (
                             <strong>ENTREGADO</strong>
                           ) : it.entrega ? (
                             <>
                               <button className="btn-edit" onClick={() => abrirForm(it)}>Editar</button>
-                              <button className="btn-entregar" onClick={() => entregar(it)}>Entregar</button>
+                              <button className="btn-lila" onClick={() => entregar(it)}>Entregar</button>
                             </>
                           ) : (
                             <button className="btn-edit" onClick={() => abrirForm(it)}>Registrar</button>

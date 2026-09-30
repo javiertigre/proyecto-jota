@@ -107,10 +107,10 @@ export default function Entregas({ avisar }) {
                 <tbody>
                   {paginados.map((x) => (
                     <tr key={x.id}>
-                      <td>{x.lugar}</td>
-                      <td>{x.ciudad}</td>
-                      <td>{x.detalle || '—'}</td>
-                      <td className="actions">
+                      <td data-label="Lugar">{x.lugar}</td>
+                      <td data-label="Ciudad">{x.ciudad}</td>
+                      <td data-label="Detalle">{x.detalle || '—'}</td>
+                      <td data-label="Acciones" className="actions">
                         <button className="btn-edit" onClick={() => editar(x)}>Editar</button>
                         <button className="btn-del" onClick={() => eliminar(x)}>Eliminar</button>
                       </td>

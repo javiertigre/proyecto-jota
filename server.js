@@ -594,13 +594,17 @@ app.get('/api/solicitudes', requireAuth, async (req, res) => {
   let q = supabase.from('ventas').select('*');
   if (cel) q = q.eq('celular_cliente', cel);
   if (nom) q = q.ilike('nombre_cliente', '%' + nom + '%');
-  // Búsqueda solo por fecha: fecha exacta (sin incluir vacías para no traer todo)
-  if (fec && !cel && !nom) q = q.eq('fecha_entrega', fec);
+  // Por celular/nombre: listar todo lo pendiente (P o D), sin filtrar por fecha
+  if (cel || nom) {
+    q = q.in('estado', ['P', 'D']);
+  } else if (fec) {
+    // Búsqueda solo por fecha: fecha exacta
+    q = q.eq('fecha_entrega', fec);
+  }
   const { data: ventasQ, error: vErr } = await q.order('created_at', { ascending: false }).limit(200);
   if (vErr) return res.status(500).json({ error: vErr.message, items: [] });
   if (!ventasQ || !ventasQ.length) return res.json({ items: [] });
-  // Con cliente + fecha: muestra los de esa fecha + los sin fecha (vacía)
-  const ventas = (fec && (cel || nom)) ? ventasQ.filter((v) => !v.fecha_entrega || v.fecha_entrega === fec) : ventasQ;
+  const ventas = ventasQ;
   if (!ventas || !ventas.length) return res.json({ items: [] });
 
   const prodIds = ventas.map((v) => v.producto_id);

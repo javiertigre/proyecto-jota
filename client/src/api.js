@@ -559,11 +559,16 @@ async function route(method, rawPath, body) {
     let qq = supabase.from('ventas').select('*');
     if (cel) qq = qq.eq('celular_cliente', cel);
     if (nom) qq = qq.ilike('nombre_cliente', '%' + nom + '%');
-    if (fec && !cel && !nom) qq = qq.eq('fecha_entrega', fec);
+    // Por celular/nombre: listar todo lo pendiente (P o D), sin filtrar por fecha
+    if (cel || nom) {
+      qq = qq.in('estado', ['P', 'D']);
+    } else if (fec) {
+      qq = qq.eq('fecha_entrega', fec);
+    }
     const { data: ventasQ, error: vErr } = await qq.order('created_at', { ascending: false }).limit(200);
     if (vErr) throw new Error(vErr.message);
     if (!ventasQ || !ventasQ.length) return { items: [] };
-    const ventas = (fec && (cel || nom)) ? ventasQ.filter((v) => !v.fecha_entrega || v.fecha_entrega === fec) : ventasQ;
+    const ventas = ventasQ;
     if (!ventas.length) return { items: [] };
     const prodIds = ventas.map((v) => v.producto_id);
     const [{ data: prods }, { data: sols }, { data: ubis }] = await Promise.all([

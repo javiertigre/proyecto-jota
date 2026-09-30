@@ -128,19 +128,19 @@ export default function ReporteVentas({ avisar }) {
                   <tbody>
                     {items.map((it, i) => (
                       <tr key={i}>
-                        <td>{it.fecha_venta}</td>
-                        <td>{it.codigo}</td>
-                        <td>{it.fardo}</td>
-                        <td>{it.precio_original}</td>
-                        <td>{it.precio_venta ?? '—'}</td>
-                        <td>{it.deposito ?? '—'}</td>
-                        <td>{it.cliente}</td>
-                        <td>{it.celular}</td>
-                        <td>{it.ciudad}</td>
-                        <td>{nombreEstado(it.estado)}</td>
-                        <td>{it.ubicacion || '—'}</td>
-                        <td>{it.observacion || '—'}</td>
-                        <td>{it.fecha_entrega || '—'}</td>
+                        <td data-label="F. venta">{it.fecha_venta}</td>
+                        <td data-label="Código">{it.codigo}</td>
+                        <td data-label="Fardo">{it.fardo}</td>
+                        <td data-label="P. orig.">{it.precio_original}</td>
+                        <td data-label="P. venta">{it.precio_venta ?? '—'}</td>
+                        <td data-label="Depósito">{it.deposito ?? '—'}</td>
+                        <td data-label="Cliente">{it.cliente}</td>
+                        <td data-label="Celular">{it.celular}</td>
+                        <td data-label="Ciudad">{it.ciudad}</td>
+                        <td data-label="Estado">{nombreEstado(it.estado)}</td>
+                        <td data-label="Ubicación">{it.ubicacion || '—'}</td>
+                        <td data-label="Observación">{it.observacion || '—'}</td>
+                        <td data-label="F. entrega">{it.fecha_entrega || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

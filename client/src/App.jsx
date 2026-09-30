@@ -24,6 +24,7 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
   const [tab, setTab] = useState('config');
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const [navAbierto, setNavAbierto] = useState(false);
   const [verCuadre, setVerCuadre] = useState(false);
   const [fardos, setFardos] = useState([]);
   const [productos, setProductos] = useState([]);
@@ -83,6 +84,8 @@ export default function App() {
   const irTab = (t) => {
     setTab(t);
     setMenuAbierto(false);
+    setNavAbierto(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const elegirConfig = (opcion) => {
     if (opcion === 'registro') irTab('fardos');
@@ -97,10 +100,14 @@ export default function App() {
   const nombre = sesion.profile?.full_name || sesion.user?.email;
 
   return (
-    <div className="app" onClick={() => setMenuAbierto(false)}>
+    <div className="app" onClick={() => { setMenuAbierto(false); setNavAbierto(false); }}>
       <div className="topbar">
-        <div className="logo" title="JC"><img src="/JC.jpeg" alt="JC" /></div>
-        <div className="tabs" onClick={(e) => e.stopPropagation()}>
+        <button className="hamburger" aria-label="Menú" onClick={(e) => { e.stopPropagation(); setNavAbierto(!navAbierto); setMenuAbierto(false); }}>☰</button>
+        <div className="brand">
+          <div className="logo" title="JC"><img src="/JC.jpeg" alt="JC" /></div>
+          <div className="brand-name">Capricornio<small>Detalles · JC</small></div>
+        </div>
+        <div className={'tabs' + (navAbierto ? ' open' : '')} onClick={(e) => e.stopPropagation()}>
           {esAdmin && (
           <div className="dropdown">
             <button
@@ -192,6 +199,37 @@ export default function App() {
       {esAdmin && tab === 'reportes' && (
         <ReporteVentas avisar={avisar} />
       )}
+
+      {/* Navegación inferior para celular */}
+      <nav className="bottom-nav" onClick={(e) => e.stopPropagation()}>
+        <div className="bottom-nav-inner">
+          {esAdmin && (
+            <button className={enConfig ? 'active' : ''} onClick={() => irTab('config')}>
+              <span className="ico">⚙️</span>Config
+            </button>
+          )}
+          {puede('registro') && (
+            <button className={tab === 'registro' ? 'active' : ''} onClick={() => irTab('registro')}>
+              <span className="ico">📦</span>Registro
+            </button>
+          )}
+          {esAdmin && (
+            <button className={tab === 'ventas' ? 'active' : ''} onClick={() => irTab('ventas')}>
+              <span className="ico">💰</span>Ventas
+            </button>
+          )}
+          {puede('entregas') && (
+            <button className={tab === 'entregas' ? 'active' : ''} onClick={() => irTab('entregas')}>
+              <span className="ico">🚚</span>Entregas
+            </button>
+          )}
+          {esAdmin && (
+            <button className={tab === 'reportes' ? 'active' : ''} onClick={() => irTab('reportes')}>
+              <span className="ico">📊</span>Reportes
+            </button>
+          )}
+        </div>
+      </nav>
     </div>
   );
 }

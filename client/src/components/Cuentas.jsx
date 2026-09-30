@@ -164,12 +164,12 @@ export default function Cuentas({ avisar }) {
               <tbody>
                 {lista.map((c) => (
                   <tr key={c.id}>
-                    <td>{c.full_name || '—'}</td>
-                    <td>{c.email || '—'}</td>
-                    <td>{ROLES[c.rol] || c.rol || '—'}</td>
-                    <td className="actions">
+                    <td data-label="Nombre">{c.full_name || '—'}</td>
+                    <td data-label="Correo">{c.email || '—'}</td>
+                    <td data-label="Tipo">{ROLES[c.rol] || c.rol || '—'}</td>
+                    <td data-label="Acciones" className="actions">
                       <button className="btn-edit" onClick={() => editar(c)}>Editar</button>
-                      <button className="btn-entregar" onClick={() => resetClave(c)}>Nueva clave</button>
+                      <button className="btn-lila" onClick={() => resetClave(c)}>Nueva clave</button>
                       <button className="btn-del" onClick={() => eliminar(c)}>Eliminar</button>
                     </td>
                   </tr>

@@ -284,7 +284,7 @@ export default function Ventas({ fardos, avisar }) {
       {fardoId && !faltaTabla && (
         <div className="card">
           <h2>🧾 Productos del fardo: {fardoSel ? `${fardoSel.codigo_fardo} — ${fardoSel.nombre_fardo}` : ''}</h2>
-          <p className="hint">{visibles.length} producto(s) · Desliza horizontalmente → para ver todas las columnas</p>
+          <p className="hint">{visibles.length} producto(s)</p>
           {visibles.length > 0 && (
             <div className="actions">
               <button className="btn-entregar" onClick={exportarExcel}>📥 Reporte Excel</button>
@@ -308,20 +308,20 @@ export default function Ventas({ fardos, avisar }) {
                 <tbody>
                   {paginados.map((p) => (
                     <tr key={p.id} className={p.venta ? 'estado-' + p.venta.estado : ''}>
-                      <td>{p.nombre_foto}</td>
-                      <td>{p.foto_url ? <a href={p.foto_url} target="_blank" rel="noreferrer"><img className="thumb" src={p.foto_url} alt={p.nombre_foto} /></a> : '—'}</td>
-                      <td>{p.precio}</td>
-                      <td>{p.venta?.fecha_venta || '—'}</td>
-                      <td>{p.venta?.precio_venta ?? '—'}</td>
-                      <td>{p.venta?.deposito_cliente ?? '—'}</td>
-                      <td>{p.venta?.celular_cliente || '—'}</td>
-                      <td>{p.venta?.nombre_cliente || '—'}</td>
-                      <td>{p.venta?.ciudad || '—'}</td>
-                      <td>{p.venta?.fecha_entrega || '—'}</td>
-                      <td>{p.venta?.ubicacion || '—'}</td>
-                      <td>{p.venta?.observacion || '—'}</td>
-                      <td>{p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin venta'}</td>
-                      <td className="actions">
+                      <td data-label="Código">{p.nombre_foto}</td>
+                      <td data-label="Foto">{p.foto_url ? <a href={p.foto_url} target="_blank" rel="noreferrer"><img className="thumb" src={p.foto_url} alt={p.nombre_foto} /></a> : '—'}</td>
+                      <td data-label="Precio">{p.precio}</td>
+                      <td data-label="Fecha venta">{p.venta?.fecha_venta || '—'}</td>
+                      <td data-label="Precio venta">{p.venta?.precio_venta ?? '—'}</td>
+                      <td data-label="Depósito">{p.venta?.deposito_cliente ?? '—'}</td>
+                      <td data-label="Celular">{p.venta?.celular_cliente || '—'}</td>
+                      <td data-label="Cliente">{p.venta?.nombre_cliente || '—'}</td>
+                      <td data-label="Ciudad">{p.venta?.ciudad || '—'}</td>
+                      <td data-label="F. entrega">{p.venta?.fecha_entrega || '—'}</td>
+                      <td data-label="Ubicación">{p.venta?.ubicacion || '—'}</td>
+                      <td data-label="Observación">{p.venta?.observacion || '—'}</td>
+                      <td data-label="Estado">{p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin venta'}</td>
+                      <td data-label="Acciones" className="actions">
                         <button className="btn-edit" onClick={() => abrirVenta(p)}>{p.venta ? 'Editar' : 'Registrar'}</button>
                       </td>
                     </tr>

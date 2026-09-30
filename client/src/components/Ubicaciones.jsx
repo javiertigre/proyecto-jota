@@ -103,9 +103,9 @@ export default function Ubicaciones({ avisar }) {
                 <tbody>
                   {paginados.map((u) => (
                     <tr key={u.id}>
-                      <td>{u.lugar}</td>
-                      <td>{u.detalle || '—'}</td>
-                      <td className="actions">
+                      <td data-label="Lugar">{u.lugar}</td>
+                      <td data-label="Detalle">{u.detalle || '—'}</td>
+                      <td data-label="Acciones" className="actions">
                         <button className="btn-edit" onClick={() => editar(u)}>Editar</button>
                         <button className="btn-del" onClick={() => eliminar(u)}>Eliminar</button>
                       </td>

@@ -101,12 +101,12 @@ export default function Fardos({ fardos, recargar, avisar }) {
               <tbody>
                 {paginados.map((f) => (
                   <tr key={f.id}>
-                    <td>{f.codigo_fardo}</td>
-                    <td>{f.nombre_fardo}</td>
-                    <td>{f.valor_total_fardo}</td>
-                    <td>{f.cantidad_productos_fardo}</td>
-                    <td>{f.fecha_creacion ? new Date(f.fecha_creacion).toLocaleString() : ''}</td>
-                    <td className="actions">
+                    <td data-label="Código">{f.codigo_fardo}</td>
+                    <td data-label="Nombre">{f.nombre_fardo}</td>
+                    <td data-label="Costo total">{f.valor_total_fardo}</td>
+                    <td data-label="Cant. productos">{f.cantidad_productos_fardo}</td>
+                    <td data-label="Fecha">{f.fecha_creacion ? new Date(f.fecha_creacion).toLocaleString() : ''}</td>
+                    <td data-label="Acciones" className="actions">
                       <button className="btn-edit" onClick={() => editar(f)}>Editar</button>
                       <button className="btn-del" onClick={() => eliminar(f)}>Eliminar</button>
                     </td>

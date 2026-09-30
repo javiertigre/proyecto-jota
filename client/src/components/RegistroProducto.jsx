@@ -207,11 +207,11 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
               <tbody>
                 {paginados.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.foto_url ? <a href={p.foto_url} target="_blank" rel="noreferrer"><img className="thumb" src={p.foto_url} alt={p.nombre_foto} /></a> : '—'}</td>
-                    <td>{p.nombre_foto}</td>
-                    <td>{p.nombre_fardo}</td>
-                    <td>{p.precio}</td>
-                    <td className="actions">
+                    <td data-label="Foto">{p.foto_url ? <a href={p.foto_url} target="_blank" rel="noreferrer"><img className="thumb" src={p.foto_url} alt={p.nombre_foto} /></a> : '—'}</td>
+                    <td data-label="Código">{p.nombre_foto}</td>
+                    <td data-label="Fardo">{p.nombre_fardo}</td>
+                    <td data-label="Precio">{p.precio}</td>
+                    <td data-label="Acciones" className="actions">
                       <button className="btn-edit" onClick={() => abrirEditar(p)}>Editar</button>
                       <button className="btn-del" onClick={() => eliminar(p)}>Eliminar</button>
                     </td>

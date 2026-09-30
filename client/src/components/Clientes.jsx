@@ -121,12 +121,12 @@ export default function Clientes({ avisar }) {
                 <tbody>
                   {paginados.map((c) => (
                     <tr key={c.id}>
-                      <td>{c.nombre}</td>
-                      <td>{c.apellido_paterno}</td>
-                      <td>{c.apellido_materno || '—'}</td>
-                      <td>{c.ciudad || '—'}</td>
-                      <td>{c.celular}</td>
-                      <td className="actions">
+                      <td data-label="Nombre">{c.nombre}</td>
+                      <td data-label="Ap. Paterno">{c.apellido_paterno}</td>
+                      <td data-label="Ap. Materno">{c.apellido_materno || '—'}</td>
+                      <td data-label="Ciudad">{c.ciudad || '—'}</td>
+                      <td data-label="Celular">{c.celular}</td>
+                      <td data-label="Acciones" className="actions">
                         <button className="btn-edit" onClick={() => editar(c)}>Editar</button>
                         <button className="btn-del" onClick={() => eliminar(c)}>Eliminar</button>
                       </td>

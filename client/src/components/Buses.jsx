@@ -162,13 +162,13 @@ export default function Buses({ avisar }) {
                   {paginados.map((b) => (
                     <Fragment key={b.id}>
                       <tr>
-                        <td>{b.nombre}</td>
-                        <td>{b.direccion || '—'}</td>
-                        <td>{b.telefono || '—'}</td>
-                        <td>{b.celular || '—'}</td>
-                        <td>{b.destinos.length === 0 ? '—' : b.destinos.map((d) => d.destino).join(', ')}</td>
-                        <td className="actions">
-                          <button className="btn-edit" onClick={() => setAbiertos({ ...abiertos, [b.id]: !abiertos[b.id] })}>
+                        <td data-label="Empresa">{b.nombre}</td>
+                        <td data-label="Dirección">{b.direccion || '—'}</td>
+                        <td data-label="Teléfono">{b.telefono || '—'}</td>
+                        <td data-label="Celular">{b.celular || '—'}</td>
+                        <td data-label="Destinos">{b.destinos.length === 0 ? '—' : b.destinos.map((d) => d.destino).join(', ')}</td>
+                        <td data-label="Acciones" className="actions">
+                          <button className="btn-lila" onClick={() => setAbiertos({ ...abiertos, [b.id]: !abiertos[b.id] })}>
                             Destinos ({b.destinos.length})
                           </button>
                           <button className="btn-edit" onClick={() => editar(b)}>Editar</button>
@@ -177,7 +177,7 @@ export default function Buses({ avisar }) {
                       </tr>
                       {abiertos[b.id] && (
                         <tr>
-                          <td colSpan="6">
+                          <td colSpan="6" data-label="">
                             <strong>Destinos de {b.nombre}:</strong>
                             {b.destinos.length === 0 && <p className="empty">Sin destinos. Agrega el primero abajo.</p>}
                             <ul>
