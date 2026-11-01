@@ -369,10 +369,6 @@ export default function Ventas({ fardos, avisar }) {
               <input name="ciudad" value={form.ciudad} onChange={cambiar} />
             </div>
             <div>
-              <label>Fecha de entrega</label>
-              <input type="date" name="fecha_entrega" value={form.fecha_entrega} onChange={cambiar} />
-            </div>
-            <div>
               <label>Estado</label>
               <select name="estado" value={form.estado} onChange={cambiar}>
                 <option value="P">P — Pendiente de Entrega</option>
