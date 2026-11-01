@@ -143,7 +143,12 @@ export default function Ventas({ fardos, avisar }) {
   });
   const paginados = visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
 
-  useEffect(() => { setPagina(1); }, [fardoId, fTexto, fEstado, fCelular, fNombre, items]);
+  useEffect(() => { setPagina(1); }, [fardoId, fTexto, fEstado, fCelular, fNombre]);
+
+  // Si los datos se reducen (filtros/recarga), no dejar la página fuera de rango
+  useEffect(() => {
+    setPagina((p) => Math.min(p, Math.max(1, Math.ceil(visibles.length / POR_PAGINA))));
+  }, [visibles.length]);
 
   const fardoSel = fardos.find((f) => String(f.id) === String(fardoId));
 
@@ -284,7 +289,7 @@ export default function Ventas({ fardos, avisar }) {
       {fardoId && !faltaTabla && (
         <div className="card">
           <h2>🧾 Productos del fardo: {fardoSel ? `${fardoSel.codigo_fardo} — ${fardoSel.nombre_fardo}` : ''}</h2>
-          <p className="hint">{visibles.length} producto(s)</p>
+          <p className="hint">{visibles.length} producto(s) · {visibles.filter((p) => p.venta).length} vendido(s) · {visibles.filter((p) => !p.venta).length} en almacén</p>
           {visibles.length > 0 && (
             <div className="actions">
               <button className="btn-entregar" onClick={exportarExcel}>📥 Reporte Excel</button>
@@ -302,7 +307,7 @@ export default function Ventas({ fardos, avisar }) {
                   <tr>
                     <th>Código</th><th>Foto</th><th>Precio</th><th>Fecha venta</th>
                     <th>Precio venta</th><th>Depósito</th><th>Celular</th><th>Cliente</th>
-                    <th>Ciudad</th><th>F. entrega</th><th>Ubicación</th><th>Observación</th><th>Estado</th><th>Acciones</th>
+                    <th>Ciudad</th><th>Ubicación</th><th>Observación</th><th>Estado</th><th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -317,7 +322,6 @@ export default function Ventas({ fardos, avisar }) {
                       <td data-label="Celular">{p.venta?.celular_cliente || '—'}</td>
                       <td data-label="Cliente">{p.venta?.nombre_cliente || '—'}</td>
                       <td data-label="Ciudad">{p.venta?.ciudad || '—'}</td>
-                      <td data-label="F. entrega">{p.venta?.fecha_entrega || '—'}</td>
                       <td data-label="Ubicación">{p.venta?.ubicacion || '—'}</td>
                       <td data-label="Observación">{p.venta?.observacion || '—'}</td>
                       <td data-label="Estado">{p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin venta'}</td>

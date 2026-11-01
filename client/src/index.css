@@ -57,6 +57,7 @@ img { max-width: 100%; }
   box-shadow: var(--shadow); margin-bottom: 16px; border: 1px solid #f1f5f9;
 }
 .card h2 { margin: 0 0 6px; font-size: 17px; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.total-precio { float: right; font-size: 14px; font-weight: 700; color: #b45309; margin-left: 12px; }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0; }
 .success, .error {
   padding: 12px 14px; border-radius: 12px; font-size: 14px; margin: 0 0 12px;

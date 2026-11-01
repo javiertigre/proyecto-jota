@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { generarExcel } from '../excel.js';
 import Paginacion from './Paginacion.jsx';
 
 export default function RegistroProducto({ fardos, productos, fardoSel, setFardoSel, recargar, avisar }) {
@@ -12,6 +13,7 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
   const [fotoEdit, setFotoEdit] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [pagina, setPagina] = useState(1);
+  const [generandoExcel, setGenerandoExcel] = useState(false);
 
   const elegirFardo = async (id) => {
     setFardoSel(id);
@@ -94,32 +96,44 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
 
   const fardoActual = fardos.find((f) => String(f.id) === String(fardoSel));
 
-  const exportarExcel = () => {
-    const cols = ['Código (correlativo-código fardo)', 'Código fardo', 'Fardo', 'Precio', 'Foto URL'];
-    const esc = (v) => {
-      const s = v === null || v === undefined ? '' : String(v);
-      return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-    const filas = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0)).map((p) => [
-      p.nombre_foto || (String(p.correlativo ?? '').padStart(3, '0') + '-' + (p.codigo_fardo || '')),
-      p.codigo_fardo || '',
-      p.nombre_fardo || '',
-      p.precio ?? '',
-      p.foto_url || ''
-    ]);
-    const csv = '﻿' + [cols, ...filas].map((f) => f.map(esc).join(';')).join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'productos_' + (fardoActual ? fardoActual.codigo_fardo : 'todos') + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportarExcel = async () => {
+    setGenerandoExcel(true);
+    try {
+      const ordenados = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0));
+      const totalPrecio = ordenados.reduce((s, p) => s + (Number(p.precio) || 0), 0).toFixed(2);
+      const filas = ordenados.map((p) => [
+        p.nombre_foto || (String(p.correlativo ?? '').padStart(3, '0') + '-' + (p.codigo_fardo || '')),
+        p.codigo_fardo || '',
+        p.nombre_fardo || '',
+        Number(p.precio) || 0,
+        ''
+      ]);
+      const fotos = ordenados.map((p) => (p.foto_url ? { url: p.foto_url } : null));
+      filas.push(['', '', 'TOTAL', Number(totalPrecio), '']);
+      fotos.push(null);
+      await generarExcel({
+        nombre: 'productos_' + (fardoActual ? fardoActual.codigo_fardo : 'todos'),
+        columnas: [
+          { header: 'Código (correlativo-código fardo)', key: 'codigo', width: 26 },
+          { header: 'Código fardo', key: 'codigo_fardo', width: 16 },
+          { header: 'Fardo', key: 'fardo', width: 26 },
+          { header: 'Precio', key: 'precio', width: 12 },
+          { header: 'Foto', key: 'foto', width: 16 }
+        ],
+        filas,
+        fotos
+      });
+    } catch (err) {
+      avisar('error', 'No se pudo generar el Excel: ' + err.message);
+    } finally {
+      setGenerandoExcel(false);
+    }
   };
 
   const exportarPDF = () => {
     const titulo = 'Reporte de productos — ' + (fardoActual ? (fardoActual.codigo_fardo + ' — ' + fardoActual.nombre_fardo) : 'todos');
     const fecha = new Date().toLocaleString();
+    const totalPrecio = visibles.reduce((s, p) => s + (Number(p.precio) || 0), 0).toFixed(2);
     const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const filas = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0)).map((p) => {
       const foto = p.foto_url ? '<img src="' + p.foto_url + '" style="width:60px;height:60px;object-fit:cover;" />' : '—';
@@ -140,14 +154,80 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
       + 'table{width:100%;border-collapse:collapse;font-size:12px}'
       + 'th,td{border:1px solid #999;padding:5px;text-align:left}'
       + 'th{background:#eab308;color:#422006}'
+      + 'tfoot td{background:#fef9c3;font-weight:700}'
       + '@media print{.no-print{display:none}}'
       + '</style></head><body>'
-      + '<div class="cabecera"><img class="logo-rep" src="/JC.jpeg" /><div class="tit"><h2>' + escH(titulo) + '</h2><p>' + escH(fecha) + ' · ' + visibles.length + ' producto(s)</p></div></div>'
-      + '<table><thead><tr><th>Código</th><th>Foto</th><th>Código fardo</th><th>Fardo</th><th>Precio</th></tr></thead><tbody>' + filas + '</tbody></table>'
+      + '<div class="cabecera"><img class="logo-rep" src="/JC.jpeg" /><div class="tit"><h2>' + escH(titulo) + '</h2><p>' + escH(fecha) + ' · ' + visibles.length + ' producto(s) · Total: Bs. ' + totalPrecio + '</p></div></div>'
+      + '<table><thead><tr><th>Código</th><th>Foto</th><th>Código fardo</th><th>Fardo</th><th>Precio</th></tr></thead><tbody>' + filas + '</tbody>'
+      + '<tfoot><tr><td colspan="4" style="text-align:right;font-weight:700">Total</td><td style="font-weight:700">Bs. ' + totalPrecio + '</td></tr></tfoot></table>'
       + '<p class="no-print"><button onclick="window.print()">Imprimir / Guardar PDF</button></p>'
       + '</body></html>');
     w.document.close();
     w.focus();
+  };
+
+  const generarNumeros = () => {
+    const titulo = 'Números de productos — ' + (fardoActual ? (fardoActual.codigo_fardo + ' — ' + fardoActual.nombre_fardo) : 'todos');
+    const fecha = new Date().toLocaleString();
+    const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const celdas = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0)).map((p) => {
+      const codigo = p.nombre_foto || (String(p.correlativo ?? '').padStart(3, '0') + '-' + (p.codigo_fardo || ''));
+      const foto = p.foto_url
+        ? '<img class="foto" src="' + escH(p.foto_url) + '" alt="' + escH(codigo) + '" />'
+        : '<div class="foto sin-foto">—</div>';
+      return '<div class="item">' + foto + '<div class="datos"><div class="codigo">' + escH(codigo)
+        + '</div><div class="precio">Bs. ' + escH(p.precio ?? '') + '</div></div></div>';
+    }).join('');
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write('<html><head><title>' + escH(titulo) + '</title><style>'
+      + '@page{size:letter portrait;margin:6mm}'
+      + 'body{font-family:sans-serif;padding:6px;color:#111}'
+      + 'h2{margin:0 0 4px;font-size:16px} .sub{color:#555;margin:0 0 10px;font-size:11px}'
+      + '.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}'
+      + '.item{border:1px solid #999;border-radius:5px;padding:6px;display:flex;align-items:center;gap:6px;page-break-inside:avoid;break-inside:avoid}'
+      + '.foto{width:54px;height:54px;object-fit:cover;border-radius:4px;flex:0 0 54px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:12px;color:#888}'
+      + '.datos{min-width:0}'
+      + '.codigo{font-size:12px;font-weight:700;word-break:break-word;line-height:1.2}'
+      + '.precio{font-size:12px;font-weight:700;margin-top:2px}'
+      + '@media print{.no-print{display:none}}'
+      + '</style></head><body>'
+      + '<h2>' + escH(titulo) + '</h2><p class="sub">' + escH(fecha) + ' · ' + visibles.length + ' producto(s)</p>'
+      + '<div class="grid">' + celdas + '</div>'
+      + '<p class="no-print"><button onclick="window.print()">Imprimir / Guardar PDF</button></p>'
+      + '</body></html>');
+    w.document.close();
+    w.focus();
+  };
+
+  const exportarNumerosExcel = async () => {
+    setGenerandoExcel(true);
+    try {
+      const ordenados = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0));
+      const totalPrecio = ordenados.reduce((s, p) => s + (Number(p.precio) || 0), 0).toFixed(2);
+      const filas = ordenados.map((p) => [
+        p.nombre_foto || (String(p.correlativo ?? '').padStart(3, '0') + '-' + (p.codigo_fardo || '')),
+        Number(p.precio) || 0,
+        ''
+      ]);
+      const fotos = ordenados.map((p) => (p.foto_url ? { url: p.foto_url } : null));
+      filas.push(['TOTAL', Number(totalPrecio), '']);
+      fotos.push(null);
+      await generarExcel({
+        nombre: 'numeros_' + (fardoActual ? fardoActual.codigo_fardo : 'todos'),
+        columnas: [
+          { header: 'Código', key: 'codigo', width: 26 },
+          { header: 'Precio (Bs.)', key: 'precio', width: 14 },
+          { header: 'Foto', key: 'foto', width: 16 }
+        ],
+        filas,
+        fotos
+      });
+    } catch (err) {
+      avisar('error', 'No se pudo generar el Excel: ' + err.message);
+    } finally {
+      setGenerandoExcel(false);
+    }
   };
 
   return (
@@ -180,7 +260,7 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
       </div>
 
       <div className="card">
-        <h2>🧾 Productos registrados ({visibles.length})</h2>
+        <h2>🧾 Productos registrados ({visibles.length})<span className="total-precio">Total: Bs. {visibles.reduce((s, p) => s + (Number(p.precio) || 0), 0).toFixed(2)}</span></h2>
         <div>
           <label>🔍 Buscar por correlativo</label>
           <input
@@ -192,8 +272,10 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
         </div>
         {visibles.length > 0 && (
           <div className="actions" style={{ marginTop: 10 }}>
-            <button className="btn-entregar" onClick={exportarExcel}>📥 Reporte Excel</button>
+            <button className="btn-entregar" onClick={exportarExcel} disabled={generandoExcel}>{generandoExcel ? 'Generando...' : '📥 Reporte Excel'}</button>
             <button className="btn-edit" onClick={exportarPDF}>📄 Reporte PDF</button>
+            <button className="btn-edit" onClick={generarNumeros}>🔢 Generar Números</button>
+            <button className="btn-entregar" onClick={exportarNumerosExcel} disabled={generandoExcel}>{generandoExcel ? 'Generando...' : '📥 Números Excel'}</button>
           </div>
         )}
         {visibles.length === 0 ? (
