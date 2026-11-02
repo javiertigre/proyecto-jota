@@ -236,13 +236,19 @@ async function route(method, rawPath, body) {
 
   // ----- Productos -----
   if (method === 'GET' && path === '/api/productos') {
+    const fardo_id = q.get('fardo_id');
     const { data: fardos } = await supabase.from('fardos').select('id, codigo_fardo, nombre_fardo');
     const mapa = {};
     (fardos || []).forEach((f) => { mapa[f.id] = f; });
-    const data = await traerTodas(() => supabase
-      .from('productos_fardo').select('*')
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false }));
+    const data = await traerTodas(() => {
+      let consulta = supabase.from('productos_fardo').select('*');
+      if (fardo_id) {
+        consulta = consulta.eq('fardo_id', fardo_id).order('correlativo');
+      } else {
+        consulta = consulta.order('created_at', { ascending: false }).order('id', { ascending: false });
+      }
+      return consulta;
+    });
     return {
       productos: data.map((p) => ({
         ...p,
@@ -304,6 +310,23 @@ async function route(method, rawPath, body) {
     }
     const { data, error } = await supabase.from('productos_fardo').update(cambios).eq('id', id).select().single();
     if (error || !data) throw new Error(error ? error.message : 'Sin permiso en la base de datos (revisa RLS).');
+    return { ok: true, producto: { ...data, foto_url: fotoUrl(data.foto_ruta) } };
+  }
+  if ((m = path.match(/^\/api\/productos\/([^/]+)\/remate$/)) && method === 'PUT') {
+    const valor = body ? body.precio_remate : null;
+    let precio_remate = null;
+    if (valor !== '' && valor !== null && valor !== undefined) {
+      precio_remate = Number(valor);
+      if (!Number.isFinite(precio_remate) || precio_remate < 0) throw new Error('Precio de remate inválido.');
+    }
+    const { data, error } = await supabase
+      .from('productos_fardo').update({ precio_remate }).eq('id', m[1]).select().single();
+    if (error || !data) {
+      if (error && /precio_remate/i.test(error.message)) {
+        throw new Error('Falta la columna precio_remate. Ejecuta auth-supabase/REMATE.sql en el SQL Editor de Supabase y vuelve a intentar.');
+      }
+      throw new Error(error ? error.message : 'Sin permiso en la base de datos (revisa RLS).');
+    }
     return { ok: true, producto: { ...data, foto_url: fotoUrl(data.foto_ruta) } };
   }
 

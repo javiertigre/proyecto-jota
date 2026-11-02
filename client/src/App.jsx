@@ -11,6 +11,7 @@ import Cuentas from './components/Cuentas.jsx';
 import SolicitudesEntrega from './components/SolicitudesEntrega.jsx';
 import Ventas from './components/Ventas.jsx';
 import ReporteVentas from './components/ReporteVentas.jsx';
+import Analisis from './components/Analisis.jsx';
 
 // Pestaña inicial según tipo de usuario
 function tabInicial(rol) {
@@ -112,7 +113,11 @@ export default function App() {
           <div className="dropdown">
             <button
               className={'tab-btn' + (enConfig ? ' active' : '')}
-              onClick={() => setMenuAbierto(!menuAbierto)}
+              onClick={() => {
+                setTab('config');
+                setMenuAbierto(!menuAbierto);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
             >
               ⚙️ Configuración ▾
             </button>
@@ -131,6 +136,7 @@ export default function App() {
           {esAdmin && <button className={'tab-btn' + (tab === 'ventas' ? ' active' : '')} onClick={() => irTab('ventas')}>💰 Ventas</button>}
           {puede('entregas') && <button className={'tab-btn' + (tab === 'entregas' ? ' active' : '')} onClick={() => irTab('entregas')}>🚚 Entregas</button>}
           {esAdmin && <button className={'tab-btn' + (tab === 'reportes' ? ' active' : '')} onClick={() => irTab('reportes')}>📊 Reportes</button>}
+          {esAdmin && <button className={'tab-btn' + (tab === 'analisis' ? ' active' : '')} onClick={() => irTab('analisis')}>📈 Análisis</button>}
         </div>
         <div className="userbox">
           <div><strong>{nombre}</strong></div>
@@ -144,6 +150,16 @@ export default function App() {
       {esAdmin && tab === 'config' && (
         <div className="card">
           <h2>⚙️ Configuración</h2>
+          <p className="hint">Selecciona un módulo para administrar.</p>
+          <div className="config-grid">
+            <button onClick={() => elegirConfig('registro')}>📦 Registro de Fardos</button>
+            <button onClick={() => elegirConfig('cuadre')}>💵 Cuadre</button>
+            <button onClick={() => elegirConfig('clientes')}>👥 Registro de Clientes</button>
+            <button onClick={() => elegirConfig('buses')}>🚌 Registro de Buses</button>
+            <button onClick={() => elegirConfig('ubicaciones')}>📍 Ubicación del Producto</button>
+            <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Registro de Entregas</button>
+            <button onClick={() => elegirConfig('cuentas')}>🔑 Administrar Cuentas</button>
+          </div>
           {verCuadre && (
             <div style={{ marginTop: 15, padding: 15, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8 }}>
               <strong>Módulo de Cuadre</strong>
@@ -200,6 +216,10 @@ export default function App() {
         <ReporteVentas avisar={avisar} />
       )}
 
+      {esAdmin && tab === 'analisis' && (
+        <Analisis fardos={fardos} avisar={avisar} />
+      )}
+
       {/* Navegación inferior para celular */}
       <nav className="bottom-nav" onClick={(e) => e.stopPropagation()}>
         <div className="bottom-nav-inner">
@@ -226,6 +246,11 @@ export default function App() {
           {esAdmin && (
             <button className={tab === 'reportes' ? 'active' : ''} onClick={() => irTab('reportes')}>
               <span className="ico">📊</span>Reportes
+            </button>
+          )}
+          {esAdmin && (
+            <button className={tab === 'analisis' ? 'active' : ''} onClick={() => irTab('analisis')}>
+              <span className="ico">📈</span>Análisis
             </button>
           )}
         </div>

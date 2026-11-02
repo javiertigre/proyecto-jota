@@ -170,30 +170,39 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
     const titulo = 'Números de productos — ' + (fardoActual ? (fardoActual.codigo_fardo + ' — ' + fardoActual.nombre_fardo) : 'todos');
     const fecha = new Date().toLocaleString();
     const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const celdas = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0)).map((p) => {
+    const celdas = (p) => {
       const codigo = p.nombre_foto || (String(p.correlativo ?? '').padStart(3, '0') + '-' + (p.codigo_fardo || ''));
       const foto = p.foto_url
         ? '<img class="foto" src="' + escH(p.foto_url) + '" alt="' + escH(codigo) + '" />'
         : '<div class="foto sin-foto">—</div>';
       return '<div class="item">' + foto + '<div class="datos"><div class="codigo">' + escH(codigo)
-        + '</div><div class="precio">Bs. ' + escH(p.precio ?? '') + '</div></div></div>';
-    }).join('');
+        + '</div><div class="precio">Bs. ' + escH(p.precio ?? '') + '</div><div class="debe">Debe:</div></div></div>';
+    };
+    const ordenados = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0));
+    const POR_HOJA = 6 * 6; // 6 columnas × 6 filas
+    const hojas = [];
+    for (let i = 0; i < ordenados.length; i += POR_HOJA) {
+      hojas.push('<div class="hoja"><div class="grid">' + ordenados.slice(i, i + POR_HOJA).map(celdas).join('') + '</div></div>');
+    }
     const w = window.open('', '_blank');
     if (!w) return;
     w.document.write('<html><head><title>' + escH(titulo) + '</title><style>'
-      + '@page{size:letter portrait;margin:6mm}'
-      + 'body{font-family:sans-serif;padding:6px;color:#111}'
-      + 'h2{margin:0 0 4px;font-size:16px} .sub{color:#555;margin:0 0 10px;font-size:11px}'
-      + '.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}'
-      + '.item{border:1px solid #999;border-radius:5px;padding:6px;display:flex;align-items:center;gap:6px;page-break-inside:avoid;break-inside:avoid}'
-      + '.foto{width:54px;height:54px;object-fit:cover;border-radius:4px;flex:0 0 54px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:12px;color:#888}'
-      + '.datos{min-width:0}'
-      + '.codigo{font-size:12px;font-weight:700;word-break:break-word;line-height:1.2}'
-      + '.precio{font-size:12px;font-weight:700;margin-top:2px}'
+      + '@page{size:letter portrait;margin:4mm}'
+      + 'body{font-family:sans-serif;padding:4px;color:#111}'
+      + 'h2{margin:0 0 2px;font-size:15px} .sub{color:#555;margin:0 0 6px;font-size:11px}'
+      + '.hoja{page-break-after:always;break-after:page}'
+      + '.hoja:last-child{page-break-after:auto;break-after:auto}'
+      + '.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}'
+      + '.item{border:1px solid #999;border-radius:4px;padding:4px;display:flex;flex-direction:column;align-items:center;gap:3px;page-break-inside:avoid;break-inside:avoid;text-align:center}'
+      + '.foto{width:100%;height:85px;object-fit:cover;border-radius:3px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888}'
+      + '.datos{min-width:0;width:100%}'
+      + '.codigo{font-size:11px;font-weight:700;word-break:break-word;line-height:1.15}'
+      + '.precio{font-size:13px;font-weight:700;line-height:1.2;margin-top:2px}'
+      + '.debe{font-size:11px;font-weight:700;margin-top:2px;border-top:1px solid #bbb;padding-top:2px}'
       + '@media print{.no-print{display:none}}'
       + '</style></head><body>'
       + '<h2>' + escH(titulo) + '</h2><p class="sub">' + escH(fecha) + ' · ' + visibles.length + ' producto(s)</p>'
-      + '<div class="grid">' + celdas + '</div>'
+      + hojas.join('')
       + '<p class="no-print"><button onclick="window.print()">Imprimir / Guardar PDF</button></p>'
       + '</body></html>');
     w.document.close();
@@ -260,7 +269,7 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
       </div>
 
       <div className="card">
-        <h2>🧾 Productos registrados ({visibles.length})<span className="total-precio">Total: Bs. {visibles.reduce((s, p) => s + (Number(p.precio) || 0), 0).toFixed(2)}</span></h2>
+        <h2>🧾 Productos registrados ({visibles.length})</h2>
         <div>
           <label>🔍 Buscar por correlativo</label>
           <input

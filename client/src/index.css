@@ -37,7 +37,7 @@ img { max-width: 100%; }
 .logo img { width: 44px; height: 44px; object-fit: cover; border-radius: 12px; display: block; box-shadow: var(--shadow); }
 .brand-name { font-weight: 800; font-size: 15px; line-height: 1.1; white-space: nowrap; }
 .brand-name small { display: block; font-weight: 600; color: var(--muted); font-size: 11px; }
-.tabs { display: flex; gap: 8px; flex: 1; align-items: center; overflow-x: auto; scrollbar-width: none; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; align-items: center; overflow: visible; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab-btn {
   background: #f1f5f9; border: 1px solid transparent; padding: 10px 14px;
@@ -58,6 +58,13 @@ img { max-width: 100%; }
 }
 .card h2 { margin: 0 0 6px; font-size: 17px; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .total-precio { float: right; font-size: 14px; font-weight: 700; color: #b45309; margin-left: 12px; }
+.resumen-analisis { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.resumen-item { flex: 1 1 130px; background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.resumen-item span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.resumen-item strong { font-size: 16px; color: #0f172a; }
+.config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 12px; }
+.config-grid button { background: #f8fafc; border: 1px solid var(--line); border-radius: 12px; text-align: left; padding: 14px; font-size: 14px; }
+.config-grid button:hover { background: #f1f5f9; }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0; }
 .success, .error {
   padding: 12px 14px; border-radius: 12px; font-size: 14px; margin: 0 0 12px;
@@ -202,6 +209,10 @@ tfoot td { background: #fef9c3; font-weight: 800; }
   .tabla td[data-label=""]::before { display: none; }
   .tabla td .thumb { width: 100%; max-width: 100%; height: auto; max-height: 260px; border-radius: 12px; }
   .tabla tfoot tr { background: #fef9c3; }
+  .tabla tfoot td:empty { display: none; }
+  .resumen-analisis { gap: 6px; }
+  .resumen-item { flex: 1 1 calc(50% - 6px); padding: 7px 9px; }
+  .resumen-item strong { font-size: 15px; }
   .actions { white-space: normal; display: flex; flex-direction: column; gap: 8px; }
   .actions button, .actions a { width: 100%; margin-left: 0 !important; padding: 12px; font-size: 15px; }
   button { max-width: 100%; }

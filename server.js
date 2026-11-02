@@ -207,11 +207,17 @@ app.get('/api/fardos/:id/siguiente', requireAuth, async (req, res) => {
 
 // ---------- Productos ----------
 app.get('/api/productos', requireAuth, async (req, res) => {
+  const fardo_id = req.query.fardo_id;
   const { data: fardos } = await supabase.from('fardos').select('id, codigo_fardo, nombre_fardo');
   const mapa = {};
   (fardos || []).forEach(f => { mapa[f.id] = f; });
-  const { data, error } = await supabase
-    .from('productos_fardo').select('*').order('created_at', { ascending: false }).limit(100);
+  let consulta = supabase.from('productos_fardo').select('*');
+  if (fardo_id) {
+    consulta = consulta.eq('fardo_id', fardo_id).order('correlativo');
+  } else {
+    consulta = consulta.order('created_at', { ascending: false }).limit(100);
+  }
+  const { data, error } = await consulta;
   if (error) return res.status(500).json({ error: error.message, productos: [] });
   res.json({
     productos: (data || []).map(p => ({
@@ -293,6 +299,30 @@ app.delete('/api/productos/:id', requireAuth, async (req, res) => {
   if (!data || !data.length) return res.status(403).json({ error: 'Sin permiso en la base de datos.' });
   if (prod && prod.foto_ruta) await supabase.storage.from('fotos').remove([prod.foto_ruta]);
   res.json({ ok: true });
+});
+
+app.put('/api/productos/:id/remate', requireAuth, async (req, res) => {
+  try {
+    const valor = req.body ? req.body.precio_remate : null;
+    let precio_remate = null;
+    if (valor !== '' && valor !== null && valor !== undefined) {
+      precio_remate = Number(valor);
+      if (!Number.isFinite(precio_remate) || precio_remate < 0) {
+        return res.status(400).json({ error: 'Precio de remate inválido.' });
+      }
+    }
+    const { data, error } = await supabase
+      .from('productos_fardo').update({ precio_remate }).eq('id', req.params.id).select().single();
+    if (error || !data) {
+      if (error && /precio_remate/i.test(error.message)) {
+        return res.status(400).json({ error: 'Falta la columna precio_remate. Ejecuta auth-supabase/REMATE.sql en el SQL Editor de Supabase y vuelve a intentar.' });
+      }
+      return res.status(403).json({ error: error ? error.message : 'Sin permiso en la base de datos.' });
+    }
+    res.json({ ok: true, producto: { ...data, foto_url: fotoUrl(data.foto_ruta) } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ---------- Clientes ----------
