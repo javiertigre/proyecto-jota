@@ -39,6 +39,21 @@ async function comprimirFoto(file) {
   }
 }
 
+// Supabase devuelve como máximo 1000 filas por petición: recorre por páginas
+// hasta traer todo (evita que un fardo con muchos productos quede incompleto).
+async function traerTodas(construirConsulta) {
+  const TAM = 1000;
+  const filas = [];
+  for (let desde = 0; ; desde += TAM) {
+    const { data, error } = await construirConsulta().range(desde, desde + TAM - 1);
+    if (error) throw new Error(error.message);
+    const lote = data || [];
+    filas.push(...lote);
+    if (lote.length < TAM) break;
+  }
+  return filas;
+}
+
 async function siguienteCorrelativo(fardo_id) {
   const { data, error } = await supabase
     .from('productos_fardo').select('correlativo')
@@ -224,11 +239,12 @@ async function route(method, rawPath, body) {
     const { data: fardos } = await supabase.from('fardos').select('id, codigo_fardo, nombre_fardo');
     const mapa = {};
     (fardos || []).forEach((f) => { mapa[f.id] = f; });
-    const { data, error } = await supabase
-      .from('productos_fardo').select('*').order('created_at', { ascending: false }).limit(100);
-    if (error) throw new Error(error.message);
+    const data = await traerTodas(() => supabase
+      .from('productos_fardo').select('*')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false }));
     return {
-      productos: (data || []).map((p) => ({
+      productos: data.map((p) => ({
         ...p,
         codigo_fardo: mapa[p.fardo_id] ? mapa[p.fardo_id].codigo_fardo : ('#' + p.fardo_id),
         nombre_fardo: mapa[p.fardo_id] ? mapa[p.fardo_id].nombre_fardo : '—',
