@@ -173,7 +173,7 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
     const celdas = (p) => {
       const codigo = p.nombre_foto || (String(p.correlativo ?? '').padStart(3, '0') + '-' + (p.codigo_fardo || ''));
       const foto = p.foto_url
-        ? '<img class="foto" src="' + escH(p.foto_url) + '" alt="' + escH(codigo) + '" />'
+        ? '<div class="foto"><img src="' + escH(p.foto_url) + '" alt="' + escH(codigo) + '" onload="if(this.naturalHeight>this.naturalWidth)this.classList.add(\'vertical\')" /></div>'
         : '<div class="foto sin-foto">—</div>';
       return '<div class="item">' + foto + '<div class="datos"><div class="codigo">' + escH(codigo)
         + '</div><div class="precio">Bs. ' + escH(p.precio ?? '') + '</div><div class="debe">Debe:</div></div></div>';
@@ -194,7 +194,9 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
       + '.hoja:last-child{page-break-after:auto;break-after:auto}'
       + '.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}'
       + '.item{border:1px solid #999;border-radius:4px;padding:4px;display:flex;flex-direction:column;align-items:center;gap:3px;page-break-inside:avoid;break-inside:avoid;text-align:center}'
-      + '.foto{width:100%;height:85px;object-fit:cover;border-radius:3px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888}'
+      + '.foto{position:relative;width:100%;height:62px;overflow:hidden;border-radius:3px;background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;container-type:size}'
+      + '.foto img{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);max-width:100%;max-height:100%;object-fit:contain;display:block}'
+      + '.foto img.vertical{max-width:none;max-height:none;width:100cqh;height:100cqw;transform:translate(-50%,-50%) rotate(90deg)}'
       + '.datos{min-width:0;width:100%}'
       + '.codigo{font-size:11px;font-weight:700;word-break:break-word;line-height:1.15}'
       + '.precio{font-size:13px;font-weight:700;line-height:1.2;margin-top:2px}'
