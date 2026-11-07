@@ -485,34 +485,37 @@ export default function Dinamicas({ avisar }) {
     const fecha = new Date().toLocaleString();
     const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    // 6 columnas × 6 filas = 36 boletos por hoja carta (cuadrados compactos)
-    const POR_HOJA = 6 * 6;
-    const hojas = [];
-
-    const celdas = (t) => `
-      <div class="ticket">
-        <div class="ticket-header">GRAN SORTEO EL 27 DE NOVIEMBRE</div>
-        <div class="ticket-body">
-          <div class="ticket-numero">${escH(t.numeroTexto)}</div>
-          <div class="ticket-celular">📱 ${escH(t.celular)}</div>
-          <div class="ticket-cliente">👤 ${escH(t.cliente)}</div>
-          ${t.dinamica ? `<div class="ticket-dinamica">${escH(t.dinamica)}</div>` : ''}
-        </div>
-      </div>
-    `;
-
-    for (let i = 0; i < tickets.length; i += POR_HOJA) {
-      const lote = tickets.slice(i, i + POR_HOJA);
-      hojas.push(`
-        <div class="hoja">
-          <div class="hoja-header">
-            <span>GRAN SORTEO EL 27 DE NOVIEMBRE</span>
-            <span>Página ${Math.floor(i / POR_HOJA) + 1} de ${Math.ceil(tickets.length / POR_HOJA)}</span>
+    // 7 columnas × 8 filas = 56 boletos por hoja (tamaño cuadrado para recortar ~28mm × 28mm)
+    const renderHojas = (cols, rows) => {
+      const porHoja = cols * rows;
+      const totalHojas = Math.ceil(tickets.length / porHoja);
+      const res = [];
+      for (let i = 0; i < tickets.length; i += porHoja) {
+        const lote = tickets.slice(i, i + porHoja);
+        const celdas = lote.map((t) => `
+          <div class="ticket">
+            <div class="ticket-header">GRAN SORTEO EL 27 DE NOVIEMBRE</div>
+            <div class="ticket-body">
+              <div class="ticket-numero">${escH(t.numeroTexto)}</div>
+              <div class="ticket-celular">📱 ${escH(t.celular)}</div>
+              <div class="ticket-cliente">👤 ${escH(t.cliente)}</div>
+              ${t.dinamica ? `<div class="ticket-dinamica">${escH(t.dinamica)}</div>` : ''}
+            </div>
           </div>
-          <div class="grid">${lote.map(celdas).join('')}</div>
-        </div>
-      `);
-    }
+        `).join('');
+
+        res.push(`
+          <div class="hoja">
+            <div class="hoja-header">
+              <span>GRAN SORTEO EL 27 DE NOVIEMBRE</span>
+              <span>Página ${Math.floor(i / porHoja) + 1} de ${totalHojas}</span>
+            </div>
+            <div class="grid cols-${cols}">${celdas}</div>
+          </div>
+        `);
+      }
+      return res.join('');
+    };
 
     const filasTabla = tickets.map((t) => `
       <tr>
@@ -563,7 +566,7 @@ export default function Dinamicas({ avisar }) {
             background: #1e293b;
             color: #ffffff;
             border: none;
-            padding: 8px 16px;
+            padding: 7px 14px;
             border-radius: 6px;
             font-weight: 700;
             cursor: pointer;
@@ -575,6 +578,11 @@ export default function Dinamicas({ avisar }) {
             color: #1e293b;
           }
           .no-print .btn-sec:hover { background: #cbd5e1; }
+          .btn-tam.active {
+            background: #0f172a !important;
+            color: #ffffff !important;
+            outline: 2px solid #3b82f6;
+          }
           .hoja {
             page-break-after: always;
             break-after: page;
@@ -594,12 +602,24 @@ export default function Dinamicas({ avisar }) {
           }
           .grid {
             display: grid;
+            gap: 2.5px;
+          }
+          .grid.cols-7 {
+            grid-template-columns: repeat(7, 1fr);
+          }
+          .grid.cols-8 {
+            grid-template-columns: repeat(8, 1fr);
+            gap: 2px;
+          }
+          .grid.cols-6 {
             grid-template-columns: repeat(6, 1fr);
             gap: 3px;
           }
+
+          /* TICKET CUADRADO PARA CORTAR */
           .ticket {
-            border: 1px solid #888;
-            border-radius: 4px;
+            border: 1px dashed #555555;
+            border-radius: 3px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -607,51 +627,81 @@ export default function Dinamicas({ avisar }) {
             break-inside: avoid;
             background: #ffffff;
             box-sizing: border-box;
-            min-height: 38mm;
-            max-height: 42mm;
             text-align: center;
+            height: 28mm;
           }
+          .cols-8 .ticket {
+            height: 25mm;
+          }
+          .cols-6 .ticket {
+            height: 38mm;
+          }
+
           .ticket-header {
             width: 100%;
             background: #0f172a;
             color: #ffffff;
             text-align: center;
-            font-size: 7px;
+            font-size: 6.5px;
             font-weight: 800;
-            padding: 2px 1px;
-            letter-spacing: 0.2px;
+            padding: 1.5px 1px;
+            letter-spacing: 0.1px;
             line-height: 1.15;
             text-transform: uppercase;
           }
+          .cols-8 .ticket-header {
+            font-size: 5.5px;
+            padding: 1px;
+          }
+          .cols-6 .ticket-header {
+            font-size: 7.5px;
+            padding: 2px;
+          }
+
           .ticket-body {
             flex: 1;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding: 2px 3px 3px;
+            padding: 1px 2px 2px;
             text-align: center;
             min-width: 0;
           }
           .ticket-numero {
-            font-size: 19px;
+            font-size: 16px;
             font-weight: 900;
             color: #dc2626;
             line-height: 1;
-            margin: 2px 0;
+            margin: 1px 0;
           }
+          .cols-8 .ticket-numero {
+            font-size: 14px;
+          }
+          .cols-6 .ticket-numero {
+            font-size: 19px;
+          }
+
           .ticket-celular {
-            font-size: 10px;
+            font-size: 8.5px;
             font-weight: 800;
             color: #1d4ed8;
             margin: 1px 0;
-            line-height: 1.1;
+            line-height: 1;
+            white-space: nowrap;
           }
+          .cols-8 .ticket-celular {
+            font-size: 8px;
+          }
+          .cols-6 .ticket-celular {
+            font-size: 10px;
+          }
+
           .ticket-cliente {
-            font-size: 9px;
+            font-size: 7.5px;
             font-weight: 700;
             color: #111827;
-            line-height: 1.15;
+            line-height: 1.1;
             max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -659,10 +709,17 @@ export default function Dinamicas({ avisar }) {
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
           }
+          .cols-8 .ticket-cliente {
+            font-size: 7px;
+          }
+          .cols-6 .ticket-cliente {
+            font-size: 9px;
+          }
+
           .ticket-dinamica {
-            font-size: 7.5px;
+            font-size: 6.5px;
             color: #64748b;
-            margin-top: 2px;
+            margin-top: 1px;
             border-top: 1px dotted #cbd5e1;
             width: 95%;
             padding-top: 1px;
@@ -670,6 +727,7 @@ export default function Dinamicas({ avisar }) {
             text-overflow: ellipsis;
             white-space: nowrap;
           }
+
           table {
             width: 100%;
             border-collapse: collapse;
@@ -701,7 +759,11 @@ export default function Dinamicas({ avisar }) {
               ${tickets.length} boletos generados · ${fecha}
             </div>
           </div>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:12px;color:#475569;font-weight:600">Tamaño para cortar:</span>
+            <button id="btn7" class="btn-tam active" onclick="cambiarTam(7, 8, this)">✂️ Pequeño (7×8 · 56/hoja)</button>
+            <button id="btn8" class="btn-tam btn-sec" onclick="cambiarTam(8, 9, this)">✂️ Mini (8×9 · 72/hoja)</button>
+            <button id="btn6" class="btn-tam btn-sec" onclick="cambiarTam(6, 6, this)">✂️ Mediano (6×6 · 36/hoja)</button>
             <button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
             <button class="btn-sec" onclick="
               var vC = document.getElementById('vista-cupones');
@@ -720,7 +782,7 @@ export default function Dinamicas({ avisar }) {
         </div>
 
         <div id="vista-cupones">
-          ${hojas.join('')}
+          ${renderHojas(7, 8)}
         </div>
 
         <div id="vista-tabla" style="display:none">
@@ -742,6 +804,43 @@ export default function Dinamicas({ avisar }) {
             </tbody>
           </table>
         </div>
+
+        <script>
+          var allTickets = ${JSON.stringify(tickets)};
+          function cambiarTam(cols, rows, btn) {
+            document.querySelectorAll('.btn-tam').forEach(function(b) {
+              b.classList.remove('active');
+              b.classList.add('btn-sec');
+            });
+            btn.classList.add('active');
+            btn.classList.remove('btn-sec');
+
+            var porHoja = cols * rows;
+            var totalHojas = Math.ceil(allTickets.length / porHoja);
+            var html = '';
+            for (var i = 0; i < allTickets.length; i += porHoja) {
+              var lote = allTickets.slice(i, i + porHoja);
+              var celdas = lote.map(function(t) {
+                var dinamicaHtml = t.dinamica ? '<div class=\"ticket-dinamica\">' + (t.dinamica || '') + '</div>' : '';
+                return '<div class=\"ticket\">'
+                  + '<div class=\"ticket-header\">GRAN SORTEO EL 27 DE NOVIEMBRE</div>'
+                  + '<div class=\"ticket-body\">'
+                  + '<div class=\"ticket-numero\">' + (t.numeroTexto || '') + '</div>'
+                  + '<div class=\"ticket-celular\">📱 ' + (t.celular || '') + '</div>'
+                  + '<div class=\"ticket-cliente\">👤 ' + (t.cliente || '') + '</div>'
+                  + dinamicaHtml
+                  + '</div></div>';
+              }).join('');
+
+              var numPag = Math.floor(i / porHoja) + 1;
+              html += '<div class=\"hoja\">'
+                + '<div class=\"hoja-header\"><span>GRAN SORTEO EL 27 DE NOVIEMBRE</span><span>Página ' + numPag + ' de ' + totalHojas + '</span></div>'
+                + '<div class=\"grid cols-' + cols + '\">' + celdas + '</div>'
+                + '</div>';
+            }
+            document.getElementById('vista-cupones').innerHTML = html;
+          }
+        </script>
       </body>
       </html>
     `);
