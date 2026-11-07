@@ -456,7 +456,7 @@ export default function Dinamicas({ avisar }) {
         nombre: 'gran_sorteo_27_noviembre_boletos',
         columnas: [
           { header: 'Cabecera / Evento', key: 'cabecera', width: 34 },
-          { header: 'N° Ticket', key: 'numero', width: 14 },
+          { header: 'Número', key: 'numero', width: 14 },
           { header: 'Celular Cliente', key: 'celular', width: 18 },
           { header: 'Nombre del Cliente', key: 'cliente', width: 32 },
           { header: 'Dinámica', key: 'dinamica', width: 26 },
@@ -485,15 +485,15 @@ export default function Dinamicas({ avisar }) {
     const fecha = new Date().toLocaleString();
     const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    const POR_HOJA = 4 * 5;
+    // 6 columnas × 6 filas = 36 boletos por hoja carta (cuadrados compactos)
+    const POR_HOJA = 6 * 6;
     const hojas = [];
 
     const celdas = (t) => `
       <div class="ticket">
         <div class="ticket-header">GRAN SORTEO EL 27 DE NOVIEMBRE</div>
         <div class="ticket-body">
-          <div class="ticket-label">N° DE TICKET</div>
-          <div class="ticket-numero">N° ${escH(t.numeroTexto)}</div>
+          <div class="ticket-numero">${escH(t.numeroTexto)}</div>
           <div class="ticket-celular">📱 ${escH(t.celular)}</div>
           <div class="ticket-cliente">👤 ${escH(t.cliente)}</div>
           ${t.dinamica ? `<div class="ticket-dinamica">${escH(t.dinamica)}</div>` : ''}
@@ -537,11 +537,11 @@ export default function Dinamicas({ avisar }) {
         <style>
           @page {
             size: letter portrait;
-            margin: 6mm 6mm 6mm 6mm;
+            margin: 4mm;
           }
           * { box-sizing: border-box; }
           body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            font-family: sans-serif;
             margin: 0;
             padding: 4px;
             color: #111827;
@@ -552,7 +552,7 @@ export default function Dinamicas({ avisar }) {
             border: 1px solid #cbd5e1;
             padding: 10px 14px;
             border-radius: 8px;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -578,49 +578,49 @@ export default function Dinamicas({ avisar }) {
           .hoja {
             page-break-after: always;
             break-after: page;
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 12px;
           }
           .hoja:last-child {
             page-break-after: auto;
             break-after: auto;
-            margin-bottom: 0;
           }
           .hoja-header {
             display: flex;
             justify-content: space-between;
-            font-size: 9px;
+            font-size: 8px;
             color: #64748b;
-            margin-bottom: 4px;
-            font-weight: 600;
+            margin-bottom: 3px;
+            font-weight: 700;
             text-transform: uppercase;
           }
           .grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 4px;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 3px;
           }
           .ticket {
-            border: 1.5px dashed #475569;
-            border-radius: 6px;
+            border: 1px solid #888;
+            border-radius: 4px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
             page-break-inside: avoid;
             break-inside: avoid;
             background: #ffffff;
-            height: 48mm;
+            box-sizing: border-box;
+            min-height: 38mm;
+            max-height: 42mm;
+            text-align: center;
           }
           .ticket-header {
+            width: 100%;
             background: #0f172a;
             color: #ffffff;
             text-align: center;
-            font-size: 8px;
+            font-size: 7px;
             font-weight: 800;
-            padding: 3px 2px;
-            letter-spacing: 0.5px;
-            line-height: 1.2;
+            padding: 2px 1px;
+            letter-spacing: 0.2px;
+            line-height: 1.15;
             text-transform: uppercase;
           }
           .ticket-body {
@@ -629,30 +629,26 @@ export default function Dinamicas({ avisar }) {
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding: 4px;
+            padding: 2px 3px 3px;
             text-align: center;
-          }
-          .ticket-label {
-            font-size: 8px;
-            color: #64748b;
-            font-weight: 700;
-            letter-spacing: 0.5px;
+            min-width: 0;
           }
           .ticket-numero {
-            font-size: 21px;
+            font-size: 19px;
             font-weight: 900;
             color: #dc2626;
-            line-height: 1.1;
+            line-height: 1;
             margin: 2px 0;
           }
           .ticket-celular {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 800;
             color: #1d4ed8;
             margin: 1px 0;
+            line-height: 1.1;
           }
           .ticket-cliente {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             color: #111827;
             line-height: 1.15;
@@ -664,12 +660,15 @@ export default function Dinamicas({ avisar }) {
             -webkit-box-orient: vertical;
           }
           .ticket-dinamica {
-            font-size: 8px;
+            font-size: 7.5px;
             color: #64748b;
-            margin-top: 3px;
-            border-top: 1px dashed #cbd5e1;
-            width: 90%;
-            padding-top: 2px;
+            margin-top: 2px;
+            border-top: 1px dotted #cbd5e1;
+            width: 95%;
+            padding-top: 1px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
           }
           table {
             width: 100%;
@@ -731,7 +730,7 @@ export default function Dinamicas({ avisar }) {
             <thead>
               <tr>
                 <th>Evento</th>
-                <th style="text-align:center">N° Ticket</th>
+                <th style="text-align:center">Número</th>
                 <th>Celular Cliente</th>
                 <th>Nombre del Cliente</th>
                 <th>Dinámica</th>
