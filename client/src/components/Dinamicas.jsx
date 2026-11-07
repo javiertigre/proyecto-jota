@@ -14,7 +14,8 @@ const vacio = {
   dinamica_nombre: '',
   valor_dinamica: '',
   numero_desde: '',
-  numero_hasta: ''
+  numero_hasta: '',
+  ticket_entregado: 'Pendiente'
 };
 
 export default function Dinamicas({ avisar }) {
@@ -33,7 +34,9 @@ export default function Dinamicas({ avisar }) {
   const [editId, setEditId] = useState(null);
   const [faltaTabla, setFaltaTabla] = useState(false);
   const [verValores, setVerValores] = useState(false);
+  const [modoBusqueda, setModoBusqueda] = useState('ticket'); // 'ticket' | 'celular'
   const [busquedaTicket, setBusquedaTicket] = useState('');
+  const [busquedaCelular, setBusquedaCelular] = useState('');
   const [pagina, setPagina] = useState(1);
   const [generandoExcel, setGenerandoExcel] = useState(false);
   const POR_PAGINA = 10;
@@ -96,7 +99,7 @@ export default function Dinamicas({ avisar }) {
     cargarValores();
     cargarClientes();
   }, []);
-  useEffect(() => { setPagina(1); }, [lista, busquedaTicket]);
+  useEffect(() => { setPagina(1); }, [lista, busquedaTicket, busquedaCelular, modoBusqueda]);
 
   const parsearNombreParaCliente = (nombreCompleto) => {
     const limpio = String(nombreCompleto || '').trim();
@@ -223,8 +226,27 @@ export default function Dinamicas({ avisar }) {
       ...vacio,
       fecha_compra: hoy(),
       dinamica_nombre: dinamicaSel || '',
-      valor_dinamica: activa ? activa.valor : ''
+      valor_dinamica: activa ? activa.valor : '',
+      ticket_entregado: 'Pendiente'
     });
+  };
+
+  const cambiarEstadoTicket = async (item, nuevoEstado) => {
+    const estadoActual = item.ticket_entregado || 'Pendiente';
+    const estadoFinal = nuevoEstado || (estadoActual === 'Entregado' ? 'Pendiente' : 'Entregado');
+    try {
+      await api.post(`/api/dinamicas/${item.id}/estado`, { ticket_entregado: estadoFinal });
+      setLista((prev) => prev.map((x) => (x.id === item.id ? { ...x, ticket_entregado: estadoFinal } : x)));
+      avisar('exito', `Ticket de ${item.nombre_completo} actualizado a "${estadoFinal}".`);
+    } catch {
+      try {
+        await api.put(`/api/dinamicas/${item.id}`, { ...item, ticket_entregado: estadoFinal });
+        setLista((prev) => prev.map((x) => (x.id === item.id ? { ...x, ticket_entregado: estadoFinal } : x)));
+        avisar('exito', `Ticket de ${item.nombre_completo} actualizado a "${estadoFinal}".`);
+      } catch (err2) {
+        avisar('error', err2.message);
+      }
+    }
   };
 
   const guardar = async (e) => {
@@ -280,7 +302,8 @@ export default function Dinamicas({ avisar }) {
           ...vacio,
           fecha_compra: hoy(),
           dinamica_nombre: dinamicaMantener,
-          valor_dinamica: valorMantener
+          valor_dinamica: valorMantener,
+          ticket_entregado: 'Pendiente'
         });
       }
       cargar();
@@ -301,7 +324,8 @@ export default function Dinamicas({ avisar }) {
       dinamica_nombre: x.dinamica_nombre || '',
       valor_dinamica: x.valor_dinamica ?? '',
       numero_desde: x.numero_desde ?? '',
-      numero_hasta: x.numero_hasta ?? ''
+      numero_hasta: x.numero_hasta ?? '',
+      ticket_entregado: x.ticket_entregado || 'Pendiente'
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -358,11 +382,28 @@ export default function Dinamicas({ avisar }) {
     return false;
   };
 
-  const coincidencias = busquedaTicket.trim()
+  const normalizarTelefono = (tel) => String(tel || '').replace(/[^0-9]/g, '');
+
+  const coincidenciasTicket = busquedaTicket.trim()
     ? lista.filter((x) => coincideTicket(x, busquedaTicket))
     : [];
 
-  const visibles = busquedaTicket.trim() ? coincidencias : lista;
+  const coincidenciasCelular = busquedaCelular.trim()
+    ? lista.filter((x) => {
+        const celClean = normalizarTelefono(x.celular_cliente);
+        const qClean = normalizarTelefono(busquedaCelular);
+        if (qClean) return celClean.includes(qClean);
+        return String(x.celular_cliente || '').toLowerCase().includes(busquedaCelular.toLowerCase().trim());
+      })
+    : [];
+
+  const tieneFiltroTicket = modoBusqueda === 'ticket' && busquedaTicket.trim();
+  const tieneFiltroCelular = modoBusqueda === 'celular' && busquedaCelular.trim();
+
+  const visibles = tieneFiltroTicket
+    ? coincidenciasTicket
+    : (tieneFiltroCelular ? coincidenciasCelular : lista);
+
   const paginados = visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
 
   const desglosarTickets = (items) => {
@@ -372,6 +413,7 @@ export default function Dinamicas({ avisar }) {
       const cliente = x.nombre_completo || '';
       const dinamica = x.dinamica_nombre || '';
       const fecha = x.fecha_compra || '';
+      const estado = x.ticket_entregado || 'Pendiente';
 
       const tieneRango = x.numero_desde !== null && x.numero_desde !== undefined && x.numero_desde !== '' &&
                          x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
@@ -382,12 +424,14 @@ export default function Dinamicas({ avisar }) {
         if (!isNaN(d) && !isNaN(h) && h >= d) {
           for (let n = d; n <= h; n++) {
             res.push({
+              id: x.id,
               numero: n,
               numeroTexto: String(n).padStart(3, '0'),
               celular,
               cliente,
               dinamica,
-              fecha
+              fecha,
+              ticket_entregado: estado
             });
           }
           return;
@@ -405,12 +449,14 @@ export default function Dinamicas({ avisar }) {
               if (!isNaN(ini) && !isNaN(fin) && fin >= ini) {
                 for (let n = ini; n <= fin; n++) {
                   res.push({
+                    id: x.id,
                     numero: n,
                     numeroTexto: String(n).padStart(3, '0'),
                     celular,
                     cliente,
                     dinamica,
-                    fecha
+                    fecha,
+                    ticket_entregado: estado
                   });
                 }
                 return;
@@ -419,12 +465,14 @@ export default function Dinamicas({ avisar }) {
           }
           const num = parseInt(p, 10);
           res.push({
+            id: x.id,
             numero: isNaN(num) ? 0 : num,
             numeroTexto: isNaN(num) ? p : String(num).padStart(3, '0'),
             celular,
             cliente,
             dinamica,
-            fecha
+            fecha,
+            ticket_entregado: estado
           });
         });
       }
@@ -434,11 +482,39 @@ export default function Dinamicas({ avisar }) {
     return res;
   };
 
+  const comprasPorFecha = (() => {
+    if (modoBusqueda !== 'celular' || !busquedaCelular.trim() || coincidenciasCelular.length === 0) {
+      return [];
+    }
+    const mapa = {};
+    coincidenciasCelular.forEach((item) => {
+      const f = item.fecha_compra || 'Sin fecha';
+      if (!mapa[f]) mapa[f] = [];
+      mapa[f].push(item);
+    });
+    return Object.keys(mapa)
+      .sort((a, b) => b.localeCompare(a))
+      .map((fecha) => ({
+        fecha,
+        items: mapa[fecha],
+        tickets: desglosarTickets(mapa[fecha]),
+        totalMonto: mapa[fecha].reduce((acc, curr) => acc + (Number(curr.monto_compra) || 0), 0)
+      }));
+  })();
+
   const exportarSorteoExcel = async () => {
-    const origen = visibles.length > 0 && busquedaTicket.trim() ? visibles : lista;
-    const tickets = desglosarTickets(origen);
+    const origen = visibles.length > 0 && (tieneFiltroTicket || tieneFiltroCelular) ? visibles : lista;
+    // Solo números en estado Pendiente (los entregados no se muestran para exportar ni imprimir)
+    const soloPendientes = origen.filter((x) => (x.ticket_entregado || 'Pendiente') !== 'Entregado');
+    const tickets = desglosarTickets(soloPendientes);
+
     if (tickets.length === 0) {
-      avisar('error', 'No hay boletos o dinámicas registradas para exportar.');
+      const totalEntregados = desglosarTickets(origen.filter((x) => (x.ticket_entregado || 'Pendiente') === 'Entregado')).length;
+      if (totalEntregados > 0) {
+        avisar('info', `Los ${totalEntregados} boletos ya están en estado "Entregado". El reporte solo incluye boletos "Pendientes".`);
+      } else {
+        avisar('error', 'No hay boletos pendientes para exportar.');
+      }
       return;
     }
     setGenerandoExcel(true);
@@ -449,23 +525,25 @@ export default function Dinamicas({ avisar }) {
         t.celular,
         t.cliente,
         t.dinamica,
-        t.fecha
+        t.fecha,
+        t.ticket_entregado || 'Pendiente'
       ]);
 
       await generarExcel({
-        nombre: 'gran_sorteo_27_noviembre_boletos',
+        nombre: 'gran_sorteo_27_noviembre_boletos_pendientes',
         columnas: [
           { header: 'Cabecera / Evento', key: 'cabecera', width: 34 },
           { header: 'Número', key: 'numero', width: 14 },
           { header: 'Celular Cliente', key: 'celular', width: 18 },
           { header: 'Nombre del Cliente', key: 'cliente', width: 32 },
           { header: 'Dinámica', key: 'dinamica', width: 26 },
-          { header: 'Fecha de Compra', key: 'fecha', width: 16 }
+          { header: 'Fecha de Compra', key: 'fecha', width: 16 },
+          { header: 'Estado Entrega', key: 'estado', width: 16 }
         ],
         filas,
         fotos: []
       });
-      avisar('exito', 'Reporte Excel generado (' + tickets.length + ' boletos).');
+      avisar('exito', 'Reporte Excel generado (' + tickets.length + ' boletos pendientes).');
     } catch (err) {
       avisar('error', 'Error al generar Excel: ' + err.message);
     } finally {
@@ -474,14 +552,22 @@ export default function Dinamicas({ avisar }) {
   };
 
   const exportarSorteoPDF = () => {
-    const origen = visibles.length > 0 && busquedaTicket.trim() ? visibles : lista;
-    const tickets = desglosarTickets(origen);
+    const origen = visibles.length > 0 && (tieneFiltroTicket || tieneFiltroCelular) ? visibles : lista;
+    // Solo números en estado Pendiente (los entregados no se muestran para imprimir)
+    const soloPendientes = origen.filter((x) => (x.ticket_entregado || 'Pendiente') !== 'Entregado');
+    const tickets = desglosarTickets(soloPendientes);
+
     if (tickets.length === 0) {
-      avisar('error', 'No hay boletos para generar el PDF.');
+      const totalEntregados = desglosarTickets(origen.filter((x) => (x.ticket_entregado || 'Pendiente') === 'Entregado')).length;
+      if (totalEntregados > 0) {
+        avisar('info', `Los ${totalEntregados} boletos ya están en estado "Entregado". El reporte solo imprime boletos "Pendientes".`);
+      } else {
+        avisar('error', 'No hay boletos pendientes para generar el PDF.');
+      }
       return;
     }
 
-    const titulo = 'Gran Sorteo el 27 de Noviembre — Boletos';
+    const titulo = 'Gran Sorteo el 27 de Noviembre — Boletos Pendientes';
     const fecha = new Date().toLocaleString();
     const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -507,7 +593,7 @@ export default function Dinamicas({ avisar }) {
         res.push(`
           <div class="hoja">
             <div class="hoja-header">
-              <span>GRAN SORTEO EL 27 DE NOVIEMBRE</span>
+              <span>GRAN SORTEO EL 27 DE NOVIEMBRE (PENDIENTES)</span>
               <span>Página ${Math.floor(i / porHoja) + 1} de ${totalHojas}</span>
             </div>
             <div class="grid cols-${cols}">${celdas}</div>
@@ -525,6 +611,7 @@ export default function Dinamicas({ avisar }) {
         <td style="font-weight:600">${escH(t.cliente)}</td>
         <td>${escH(t.dinamica || '—')}</td>
         <td>${escH(t.fecha || '—')}</td>
+        <td style="font-weight:700;color:#b45309;text-align:center">⏳ ${escH(t.ticket_entregado || 'Pendiente')}</td>
       </tr>
     `).join('');
 
@@ -754,9 +841,9 @@ export default function Dinamicas({ avisar }) {
       <body>
         <div class="no-print">
           <div>
-            <strong style="font-size:15px;color:#0f172a">🎯 GRAN SORTEO EL 27 DE NOVIEMBRE</strong>
+            <strong style="font-size:15px;color:#0f172a">🎯 GRAN SORTEO EL 27 DE NOVIEMBRE — SOLO PENDIENTES</strong>
             <div style="font-size:12px;color:#64748b;margin-top:2px">
-              ${tickets.length} boletos generados · ${fecha}
+              ${tickets.length} boletos pendientes de entrega (los entregados no se imprimen) · ${fecha}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -786,8 +873,8 @@ export default function Dinamicas({ avisar }) {
         </div>
 
         <div id="vista-tabla" style="display:none">
-          <h2 style="margin:0 0 4px">GRAN SORTEO EL 27 DE NOVIEMBRE</h2>
-          <p style="color:#64748b;margin:0 0 10px;font-size:12px">${tickets.length} boletos registrados · ${fecha}</p>
+          <h2 style="margin:0 0 4px">GRAN SORTEO EL 27 DE NOVIEMBRE — BOLETOS PENDIENTES</h2>
+          <p style="color:#64748b;margin:0 0 10px;font-size:12px">${tickets.length} boletos pendientes de entrega · ${fecha}</p>
           <table>
             <thead>
               <tr>
@@ -797,6 +884,7 @@ export default function Dinamicas({ avisar }) {
                 <th>Nombre del Cliente</th>
                 <th>Dinámica</th>
                 <th>Fecha Compra</th>
+                <th style="text-align:center">Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -925,6 +1013,13 @@ export default function Dinamicas({ avisar }) {
               <label>Fecha de Compra</label>
               <input name="fecha_compra" type="date" value={form.fecha_compra} onChange={cambiar} />
             </div>
+            <div>
+              <label>Ticket Entregado</label>
+              <select name="ticket_entregado" value={form.ticket_entregado || 'Pendiente'} onChange={cambiar}>
+                <option value="Pendiente">⏳ Pendiente</option>
+                <option value="Entregado">✅ Entregado</option>
+              </select>
+            </div>
             <div className="full">
               <button className={editId ? 'btn-blue' : 'btn-primary'}>{editId ? 'Actualizar dinámica' : 'Guardar dinámica'}</button>{' '}
               {editId && <button type="button" onClick={cancelar}>Cancelar</button>}
@@ -940,28 +1035,35 @@ export default function Dinamicas({ avisar }) {
       {!faltaTabla && (
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
-            <h2 style={{ margin: 0 }}>📋 Dinámicas registradas ({lista.length})</h2>
+            <div>
+              <h2 style={{ margin: 0 }}>📋 Dinámicas registradas ({lista.length})</h2>
+              <small style={{ color: '#64748b', fontSize: '12px' }}>
+                Los reportes solo muestran boletos con estado <strong>Pendiente</strong>. Los entregados no se imprimen.
+              </small>
+            </div>
             <div className="actions" style={{ margin: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="btn-entregar"
                 onClick={exportarSorteoExcel}
                 disabled={generandoExcel || lista.length === 0}
+                title="Descargar Excel con boletos en estado Pendiente"
               >
-                {generandoExcel ? 'Generando Excel...' : '📥 Boletos Excel (Sorteo 27 Nov)'}
+                {generandoExcel ? 'Generando Excel...' : '📥 Boletos Excel (Solo Pendientes)'}
               </button>
               <button
                 type="button"
                 className="btn-edit"
                 onClick={exportarSorteoPDF}
                 disabled={lista.length === 0}
+                title="Imprimir boletos para recortar (solo boletos en estado Pendiente)"
               >
-                📄 Boletos PDF (Sorteo 27 Nov)
+                📄 Boletos PDF (Solo Pendientes)
               </button>
             </div>
           </div>
 
-          {/* BUSCADOR POR NÚMERO DE TICKET */}
+          {/* BUSCADORES: POR N° TICKET O POR CELULAR (HISTORIAL POR FECHAS) */}
           <div style={{
             background: '#f8fafc',
             border: '1px solid #cbd5e1',
@@ -969,125 +1071,417 @@ export default function Dinamicas({ avisar }) {
             padding: '14px 16px',
             margin: '12px 0 16px'
           }}>
-            <label style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <span>🔍</span> Buscador por Número de Ticket
-            </label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                type="search"
-                placeholder="Ingresa el N° de ticket (ej: 1, 45, 100)..."
-                value={busquedaTicket}
-                onChange={(e) => setBusquedaTicket(e.target.value)}
-                style={{ flex: 1, fontSize: '15px' }}
-              />
-              {busquedaTicket && (
-                <button
-                  type="button"
-                  onClick={() => setBusquedaTicket('')}
-                  style={{ whiteSpace: 'nowrap', padding: '8px 14px' }}
-                >
-                  Limpiar
-                </button>
-              )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, borderBottom: '1px solid #e2e8f0', paddingBottom: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setModoBusqueda('ticket')}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: 6,
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  background: modoBusqueda === 'ticket' ? '#1e293b' : '#e2e8f0',
+                  color: modoBusqueda === 'ticket' ? '#ffffff' : '#475569'
+                }}
+              >
+                🎟️ Buscar por N° de Ticket
+              </button>
+              <button
+                type="button"
+                onClick={() => setModoBusqueda('celular')}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: 6,
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  background: modoBusqueda === 'celular' ? '#1e293b' : '#e2e8f0',
+                  color: modoBusqueda === 'celular' ? '#ffffff' : '#475569'
+                }}
+              >
+                📱 Buscar por Celular (Historial por fechas)
+              </button>
             </div>
-            <small className="hint" style={{ marginTop: 4 }}>
-              Escribe el número de ticket para ver de inmediato el nombre y celular del comprador o ganador.
-            </small>
 
-            {/* RESULTADO DESTACADO */}
-            {busquedaTicket.trim() && (
-              coincidencias.length > 0 ? (
-                <div style={{
-                  background: '#ecfdf5',
-                  border: '2px solid #10b981',
-                  borderRadius: 8,
-                  padding: 14,
-                  marginTop: 12
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#065f46', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>🎟️</span> Ticket #{busquedaTicket.trim()} encontrado ({coincidencias.length} coincidencia{coincidencias.length > 1 ? 's' : ''})
-                    </div>
-                    <span style={{ fontSize: 12, background: '#a7f3d0', color: '#065f46', padding: '3px 10px', borderRadius: 12, fontWeight: 700 }}>
-                      ✓ CLIENTE ENCONTRADO
-                    </span>
-                  </div>
+            {modoBusqueda === 'ticket' ? (
+              <div>
+                <label style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <span>🎟️</span> Buscador por Número de Ticket
+                </label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="search"
+                    placeholder="Ingresa el N° de ticket (ej: 1, 45, 100)..."
+                    value={busquedaTicket}
+                    onChange={(e) => setBusquedaTicket(e.target.value)}
+                    style={{ flex: 1, fontSize: '15px' }}
+                  />
+                  {busquedaTicket && (
+                    <button
+                      type="button"
+                      onClick={() => setBusquedaTicket('')}
+                      style={{ whiteSpace: 'nowrap', padding: '8px 14px' }}
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+                <small className="hint" style={{ marginTop: 4, display: 'block' }}>
+                  Escribe el número de ticket para ver de inmediato el nombre, celular y estado de entrega del comprador.
+                </small>
 
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {coincidencias.map((c) => (
-                      <div key={c.id} style={{
-                        background: '#ffffff',
-                        border: '1px solid #86efac',
-                        borderRadius: 6,
-                        padding: 12,
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                        gap: 12
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 12, color: '#4b5563', fontWeight: 700 }}>👤 NOMBRE DEL CLIENTE</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: '#111827', marginTop: 2 }}>
-                            {c.nombre_completo}
-                          </div>
+                {/* RESULTADO POR TICKET */}
+                {busquedaTicket.trim() && (
+                  coincidenciasTicket.length > 0 ? (
+                    <div style={{
+                      background: '#ecfdf5',
+                      border: '2px solid #10b981',
+                      borderRadius: 8,
+                      padding: 14,
+                      marginTop: 12
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: '#065f46', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>🎟️</span> Ticket #{busquedaTicket.trim()} encontrado ({coincidenciasTicket.length} coincidencia{coincidenciasTicket.length > 1 ? 's' : ''})
                         </div>
-
-                        <div>
-                          <div style={{ fontSize: 12, color: '#4b5563', fontWeight: 700 }}>📱 CELULAR</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, color: '#1d4ed8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <a href={`tel:${c.celular_cliente}`} style={{ color: '#1d4ed8', textDecoration: 'none' }}>
-                              {c.celular_cliente}
-                            </a>
-                            <a
-                              href={`https://wa.me/${String(c.celular_cliente).replace(/[^0-9]/g, '')}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ fontSize: 12, background: '#22c55e', color: '#fff', padding: '3px 8px', borderRadius: 4, textDecoration: 'none', fontWeight: 700 }}
-                            >
-                              WhatsApp
-                            </a>
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={{ fontSize: 12, color: '#4b5563', fontWeight: 700 }}>🎯 DINÁMICA</div>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: '#374151', marginTop: 2 }}>
-                            {c.dinamica_nombre || '—'}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={{ fontSize: 12, color: '#4b5563', fontWeight: 700 }}>🎟️ N° DE TICKETS</div>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: '#047857', marginTop: 2 }}>
-                            {c.n_ticket || '—'}
-                          </div>
-                        </div>
+                        <span style={{ fontSize: 12, background: '#a7f3d0', color: '#065f46', padding: '3px 10px', borderRadius: 12, fontWeight: 700 }}>
+                          ✓ CLIENTE ENCONTRADO
+                        </span>
                       </div>
-                    ))}
-                  </div>
+
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {coincidenciasTicket.map((c) => (
+                          <div key={c.id} style={{
+                            background: '#ffffff',
+                            border: '1px solid #86efac',
+                            borderRadius: 6,
+                            padding: 12,
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                            gap: 12,
+                            alignItems: 'center'
+                          }}>
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4b5563', fontWeight: 700 }}>👤 NOMBRE DEL CLIENTE</div>
+                              <div style={{ fontSize: 16, fontWeight: 800, color: '#111827', marginTop: 2 }}>
+                                {c.nombre_completo}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4b5563', fontWeight: 700 }}>📱 CELULAR</div>
+                              <div style={{ fontSize: 16, fontWeight: 800, color: '#1d4ed8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <a href={`tel:${c.celular_cliente}`} style={{ color: '#1d4ed8', textDecoration: 'none' }}>
+                                  {c.celular_cliente}
+                                </a>
+                                <a
+                                  href={`https://wa.me/${String(c.celular_cliente).replace(/[^0-9]/g, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ fontSize: 11, background: '#22c55e', color: '#fff', padding: '3px 8px', borderRadius: 4, textDecoration: 'none', fontWeight: 700 }}
+                                >
+                                  WhatsApp
+                                </a>
+                              </div>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4b5563', fontWeight: 700 }}>🎯 DINÁMICA</div>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: '#374151', marginTop: 2 }}>
+                                {c.dinamica_nombre || '—'}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4b5563', fontWeight: 700 }}>🎟️ TICKETS</div>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: '#047857', marginTop: 2 }}>
+                                {c.n_ticket || '—'}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4b5563', fontWeight: 700 }}>📦 TICKET ENTREGADO</div>
+                              <div style={{ marginTop: 2 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => cambiarEstadoTicket(c)}
+                                  title="Haz clic para alternar entre Pendiente y Entregado"
+                                  style={{
+                                    cursor: 'pointer',
+                                    padding: '4px 10px',
+                                    borderRadius: 14,
+                                    border: '1px solid',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    background: (c.ticket_entregado || 'Pendiente') === 'Entregado' ? '#dcfce7' : '#fef3c7',
+                                    borderColor: (c.ticket_entregado || 'Pendiente') === 'Entregado' ? '#16a34a' : '#f59e0b',
+                                    color: (c.ticket_entregado || 'Pendiente') === 'Entregado' ? '#15803d' : '#b45309'
+                                  }}
+                                >
+                                  {(c.ticket_entregado || 'Pendiente') === 'Entregado' ? '✅ Entregado' : '⏳ Pendiente'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: '#fef2f2',
+                      border: '1px solid #f87171',
+                      borderRadius: 8,
+                      padding: 12,
+                      marginTop: 12,
+                      color: '#991b1b',
+                      fontSize: 14
+                    }}>
+                      ❌ No se encontró ningún cliente con el ticket <strong>#{busquedaTicket.trim()}</strong>.
+                    </div>
+                  )
+                )}
+              </div>
+            ) : (
+              <div>
+                <label style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <span>📱</span> Buscador por Celular (Historial de tickets por fechas)
+                </label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="search"
+                    placeholder="Ingresa el celular del cliente (ej: 77712345)..."
+                    value={busquedaCelular}
+                    onChange={(e) => setBusquedaCelular(e.target.value)}
+                    style={{ flex: 1, fontSize: '15px' }}
+                  />
+                  {busquedaCelular && (
+                    <button
+                      type="button"
+                      onClick={() => setBusquedaCelular('')}
+                      style={{ whiteSpace: 'nowrap', padding: '8px 14px' }}
+                    >
+                      Limpiar
+                    </button>
+                  )}
                 </div>
-              ) : (
-                <div style={{
-                  background: '#fef2f2',
-                  border: '1px solid #f87171',
-                  borderRadius: 8,
-                  padding: 12,
-                  marginTop: 12,
-                  color: '#991b1b',
-                  fontSize: 14
-                }}>
-                  ❌ No se encontró ningún cliente con el ticket <strong>#{busquedaTicket.trim()}</strong>.
-                </div>
-              )
+                <small className="hint" style={{ marginTop: 4, display: 'block' }}>
+                  Escribe el celular del cliente para ver todos los tickets que tiene acumulados organizados por fecha.
+                </small>
+
+                {/* RESULTADO HISTORIAL POR CELULAR */}
+                {busquedaCelular.trim() && (
+                  coincidenciasCelular.length > 0 ? (
+                    <div style={{
+                      background: '#eff6ff',
+                      border: '2px solid #3b82f6',
+                      borderRadius: 8,
+                      padding: 14,
+                      marginTop: 12
+                    }}>
+                      {/* CABECERA RESUMEN CLIENTE */}
+                      {(() => {
+                        const primer = coincidenciasCelular[0];
+                        const totalTickets = desglosarTickets(coincidenciasCelular);
+                        const pendientesCount = totalTickets.filter((t) => (t.ticket_entregado || 'Pendiente') !== 'Entregado').length;
+                        const entregadosCount = totalTickets.filter((t) => (t.ticket_entregado || 'Pendiente') === 'Entregado').length;
+                        const totalMonto = coincidenciasCelular.reduce((acc, c) => acc + (Number(c.monto_compra) || 0), 0);
+
+                        return (
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 12, borderBottom: '1px solid #bfdbfe', paddingBottom: 10 }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: '#1e40af', fontWeight: 700 }}>CLIENTE ENCONTRADO</div>
+                                <div style={{ fontSize: 19, fontWeight: 900, color: '#0f172a' }}>
+                                  👤 {primer.nombre_completo}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                                  <a href={`tel:${primer.celular_cliente}`} style={{ fontSize: 15, fontWeight: 800, color: '#1d4ed8', textDecoration: 'none' }}>
+                                    📱 {primer.celular_cliente}
+                                  </a>
+                                  <a
+                                    href={`https://wa.me/${String(primer.celular_cliente).replace(/[^0-9]/g, '')}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ fontSize: 11, background: '#22c55e', color: '#fff', padding: '3px 8px', borderRadius: 4, textDecoration: 'none', fontWeight: 700 }}
+                                  >
+                                    WhatsApp
+                                  </a>
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <div style={{ background: '#ffffff', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: 6, textAlign: 'center' }}>
+                                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>TOTAL TICKETS</div>
+                                  <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>{totalTickets.length}</div>
+                                </div>
+                                <div style={{ background: '#fef3c7', border: '1px solid #fde68a', padding: '6px 12px', borderRadius: 6, textAlign: 'center' }}>
+                                  <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700 }}>PENDIENTES</div>
+                                  <div style={{ fontSize: 18, fontWeight: 900, color: '#b45309' }}>{pendientesCount}</div>
+                                </div>
+                                <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', padding: '6px 12px', borderRadius: 6, textAlign: 'center' }}>
+                                  <div style={{ fontSize: 11, color: '#166534', fontWeight: 700 }}>ENTREGADOS</div>
+                                  <div style={{ fontSize: 18, fontWeight: 900, color: '#15803d' }}>{entregadosCount}</div>
+                                </div>
+                                <div style={{ background: '#ffffff', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: 6, textAlign: 'center' }}>
+                                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>TOTAL COMPRADO</div>
+                                  <div style={{ fontSize: 18, fontWeight: 900, color: '#047857' }}>Bs {totalMonto.toFixed(2)}</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* LISTADO ORGANIZADO POR FECHAS */}
+                            <div style={{ marginTop: 8 }}>
+                              <div style={{ fontSize: 14, fontWeight: 800, color: '#1e3a8a', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>📅</span> Historial de Tickets agrupado por Fechas ({comprasPorFecha.length} fecha{comprasPorFecha.length > 1 ? 's' : ''}):
+                              </div>
+
+                              <div style={{ display: 'grid', gap: 10 }}>
+                                {comprasPorFecha.map((gf) => (
+                                  <div key={gf.fecha} style={{
+                                    background: '#ffffff',
+                                    border: '1px solid #93c5fd',
+                                    borderRadius: 8,
+                                    padding: 12,
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                  }}>
+                                    <div style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                      gap: 6,
+                                      borderBottom: '1px dashed #cbd5e1',
+                                      paddingBottom: 6,
+                                      marginBottom: 8
+                                    }}>
+                                      <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ background: '#dbeafe', color: '#1e40af', padding: '3px 8px', borderRadius: 4, fontSize: 12 }}>
+                                          📅 {gf.fecha || 'Sin fecha'}
+                                        </span>
+                                        <span>· {gf.tickets.length} ticket{gf.tickets.length > 1 ? 's' : ''} en este día</span>
+                                      </div>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: '#047857' }}>
+                                        Subtotal: Bs {gf.totalMonto.toFixed(2)}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gap: 8 }}>
+                                      {gf.items.map((it) => {
+                                        const ticketsDelItem = desglosarTickets([it]);
+                                        const esEntregado = (it.ticket_entregado || 'Pendiente') === 'Entregado';
+
+                                        return (
+                                          <div key={it.id} style={{
+                                            background: '#f8fafc',
+                                            border: '1px solid #e2e8f0',
+                                            borderRadius: 6,
+                                            padding: '8px 10px',
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            flexWrap: 'wrap',
+                                            gap: 8
+                                          }}>
+                                            <div>
+                                              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>
+                                                {it.dinamica_nombre || 'Dinámica'} · Compra: Bs {Number(it.monto_compra || 0).toFixed(2)}
+                                              </div>
+                                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4, alignItems: 'center' }}>
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginRight: 4 }}>
+                                                  Boletos:
+                                                </span>
+                                                {ticketsDelItem.map((t) => (
+                                                  <span
+                                                    key={t.numero}
+                                                    style={{
+                                                      background: esEntregado ? '#dcfce7' : '#fee2e2',
+                                                      color: esEntregado ? '#166534' : '#991b1b',
+                                                      fontWeight: 800,
+                                                      fontSize: 12,
+                                                      padding: '2px 7px',
+                                                      borderRadius: 4,
+                                                      border: `1px solid ${esEntregado ? '#86efac' : '#fca5a5'}`
+                                                    }}
+                                                  >
+                                                    #{t.numeroTexto}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            </div>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                              <button
+                                                type="button"
+                                                onClick={() => cambiarEstadoTicket(it)}
+                                                title="Haz clic para alternar entre Pendiente y Entregado"
+                                                style={{
+                                                  cursor: 'pointer',
+                                                  padding: '5px 12px',
+                                                  borderRadius: 14,
+                                                  border: '1px solid',
+                                                  fontSize: 12,
+                                                  fontWeight: 700,
+                                                  background: esEntregado ? '#dcfce7' : '#fef3c7',
+                                                  borderColor: esEntregado ? '#16a34a' : '#f59e0b',
+                                                  color: esEntregado ? '#15803d' : '#b45309'
+                                                }}
+                                              >
+                                                {esEntregado ? '✅ Entregado' : '⏳ Pendiente'}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: '#fef2f2',
+                      border: '1px solid #f87171',
+                      borderRadius: 8,
+                      padding: 12,
+                      marginTop: 12,
+                      color: '#991b1b',
+                      fontSize: 14
+                    }}>
+                      ❌ No se encontró ningún cliente registrado con el celular <strong>{busquedaCelular.trim()}</strong>.
+                    </div>
+                  )
+                )}
+              </div>
             )}
           </div>
 
           {visibles.length === 0 ? (
-            <p className="empty">{busquedaTicket.trim() ? 'No hay dinámicas que coincidan con la búsqueda.' : 'Aún no hay dinámicas registradas.'}</p>
+            <p className="empty">
+              {tieneFiltroTicket || tieneFiltroCelular
+                ? 'No hay dinámicas que coincidan con la búsqueda.'
+                : 'Aún no hay dinámicas registradas.'}
+            </p>
           ) : (
             <div className="tabla">
               <table>
                 <thead>
-                  <tr><th>Celular Cliente</th><th>Nombre Completo</th><th>Monto Compra</th><th>N° Ticket</th><th>Fecha de Compra</th><th>Valor Dinámica</th><th>Acciones</th></tr>
+                  <tr>
+                    <th>Celular Cliente</th>
+                    <th>Nombre Completo</th>
+                    <th>Monto Compra</th>
+                    <th>N° Ticket</th>
+                    <th>Fecha de Compra</th>
+                    <th>Valor Dinámica</th>
+                    <th>Ticket Entregado</th>
+                    <th>Acciones</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {paginados.map((x) => (
@@ -1101,6 +1495,29 @@ export default function Dinamicas({ avisar }) {
                         {x.valor_dinamica != null
                           ? (x.dinamica_nombre ? x.dinamica_nombre + ' — ' : '') + 'Bs ' + Number(x.valor_dinamica).toFixed(2)
                           : (x.dinamica_nombre || '—')}
+                      </td>
+                      <td data-label="Ticket Entregado">
+                        <button
+                          type="button"
+                          onClick={() => cambiarEstadoTicket(x)}
+                          title="Haz clic para alternar entre Pendiente y Entregado"
+                          style={{
+                            cursor: 'pointer',
+                            padding: '4px 10px',
+                            borderRadius: '16px',
+                            border: '1px solid',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: (x.ticket_entregado || 'Pendiente') === 'Entregado' ? '#dcfce7' : '#fef3c7',
+                            borderColor: (x.ticket_entregado || 'Pendiente') === 'Entregado' ? '#16a34a' : '#f59e0b',
+                            color: (x.ticket_entregado || 'Pendiente') === 'Entregado' ? '#15803d' : '#b45309'
+                          }}
+                        >
+                          {(x.ticket_entregado || 'Pendiente') === 'Entregado' ? '✅ Entregado' : '⏳ Pendiente'}
+                        </button>
                       </td>
                       <td data-label="Acciones" className="actions">
                         <button className="btn-edit" onClick={() => editar(x)}>Editar</button>

@@ -12,14 +12,16 @@ CREATE TABLE IF NOT EXISTS dinamicas (
   valor_dinamica numeric,
   numero_desde integer,
   numero_hasta integer,
+  ticket_entregado text DEFAULT 'Pendiente',
   created_at timestamptz DEFAULT now()
 );
 
--- Por si la tabla ya existía sin las columnas de la dinámica seleccionada
+-- Por si la tabla ya existía sin las nuevas columnas
 ALTER TABLE dinamicas ADD COLUMN IF NOT EXISTS dinamica_nombre text;
 ALTER TABLE dinamicas ADD COLUMN IF NOT EXISTS valor_dinamica numeric;
 ALTER TABLE dinamicas ADD COLUMN IF NOT EXISTS numero_desde integer;
 ALTER TABLE dinamicas ADD COLUMN IF NOT EXISTS numero_hasta integer;
+ALTER TABLE dinamicas ADD COLUMN IF NOT EXISTS ticket_entregado text DEFAULT 'Pendiente';
 
 -- Acceso total para usuarios logueados (igual que el resto del sistema)
 ALTER TABLE dinamicas ENABLE ROW LEVEL SECURITY;

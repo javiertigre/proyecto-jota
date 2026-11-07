@@ -412,13 +412,13 @@ async function route(method, rawPath, body) {
     return { siguiente: max + 1 };
   }
   if (method === 'POST' && path === '/api/dinamicas') {
-    const { celular_cliente, nombre_completo, monto_compra, n_ticket, fecha_compra, dinamica_nombre, valor_dinamica, numero_desde, numero_hasta } = body || {};
+    const { celular_cliente, nombre_completo, monto_compra, n_ticket, fecha_compra, dinamica_nombre, valor_dinamica, numero_desde, numero_hasta, ticket_entregado } = body || {};
     if (!celular_cliente || !String(celular_cliente).trim()) throw new Error('El celular del cliente es obligatorio.');
     if (!nombre_completo || !String(nombre_completo).trim()) throw new Error('El nombre completo es obligatorio.');
     if (monto_compra === undefined || monto_compra === null || monto_compra === '') {
       throw new Error('El monto de compra es obligatorio.');
     }
-    const { data, error } = await supabase.from('dinamicas').insert({
+    const payload = {
       celular_cliente: String(celular_cliente).trim(),
       nombre_completo: String(nombre_completo).trim(),
       monto_compra: Number(monto_compra),
@@ -427,10 +427,24 @@ async function route(method, rawPath, body) {
       dinamica_nombre: dinamica_nombre ? String(dinamica_nombre).trim() : null,
       valor_dinamica: valor_dinamica !== undefined && valor_dinamica !== null && valor_dinamica !== '' ? Number(valor_dinamica) : null,
       numero_desde: numero_desde !== undefined && numero_desde !== null && numero_desde !== '' ? parseInt(numero_desde, 10) : null,
-      numero_hasta: numero_hasta !== undefined && numero_hasta !== null && numero_hasta !== '' ? parseInt(numero_hasta, 10) : null
-    }).select().single();
+      numero_hasta: numero_hasta !== undefined && numero_hasta !== null && numero_hasta !== '' ? parseInt(numero_hasta, 10) : null,
+      ticket_entregado: ticket_entregado ? String(ticket_entregado).trim() : 'Pendiente'
+    };
+    let { data, error } = await supabase.from('dinamicas').insert(payload).select().single();
+    if (error && error.message && error.message.includes('ticket_entregado')) {
+      delete payload.ticket_entregado;
+      const reintento = await supabase.from('dinamicas').insert(payload).select().single();
+      data = reintento.data;
+      error = reintento.error;
+    }
     if (error) throw new Error(error.message);
     return { ok: true, dinamica: data };
+  }
+  if ((m = path.match(/^\/api\/dinamicas\/([^/]+)\/estado$/)) && (method === 'POST' || method === 'PATCH')) {
+    const nuevoEstado = body && body.ticket_entregado ? String(body.ticket_entregado).trim() : 'Entregado';
+    const { data, error } = await supabase.from('dinamicas').update({ ticket_entregado: nuevoEstado }).eq('id', m[1]).select();
+    if (error) throw new Error(error.message);
+    return { ok: true, dinamica: data && data[0] };
   }
   if ((m = path.match(/^\/api\/dinamicas\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
     if (method === 'DELETE') {
@@ -439,13 +453,13 @@ async function route(method, rawPath, body) {
       if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
       return { ok: true };
     }
-    const { celular_cliente, nombre_completo, monto_compra, n_ticket, fecha_compra, dinamica_nombre, valor_dinamica, numero_desde, numero_hasta } = body || {};
+    const { celular_cliente, nombre_completo, monto_compra, n_ticket, fecha_compra, dinamica_nombre, valor_dinamica, numero_desde, numero_hasta, ticket_entregado } = body || {};
     if (!celular_cliente || !String(celular_cliente).trim()) throw new Error('El celular del cliente es obligatorio.');
     if (!nombre_completo || !String(nombre_completo).trim()) throw new Error('El nombre completo es obligatorio.');
     if (monto_compra === undefined || monto_compra === null || monto_compra === '') {
       throw new Error('El monto de compra es obligatorio.');
     }
-    const { data, error } = await supabase.from('dinamicas').update({
+    const payload = {
       celular_cliente: String(celular_cliente).trim(),
       nombre_completo: String(nombre_completo).trim(),
       monto_compra: Number(monto_compra),
@@ -454,8 +468,16 @@ async function route(method, rawPath, body) {
       dinamica_nombre: dinamica_nombre ? String(dinamica_nombre).trim() : null,
       valor_dinamica: valor_dinamica !== undefined && valor_dinamica !== null && valor_dinamica !== '' ? Number(valor_dinamica) : null,
       numero_desde: numero_desde !== undefined && numero_desde !== null && numero_desde !== '' ? parseInt(numero_desde, 10) : null,
-      numero_hasta: numero_hasta !== undefined && numero_hasta !== null && numero_hasta !== '' ? parseInt(numero_hasta, 10) : null
-    }).eq('id', m[1]).select();
+      numero_hasta: numero_hasta !== undefined && numero_hasta !== null && numero_hasta !== '' ? parseInt(numero_hasta, 10) : null,
+      ticket_entregado: ticket_entregado ? String(ticket_entregado).trim() : 'Pendiente'
+    };
+    let { data, error } = await supabase.from('dinamicas').update(payload).eq('id', m[1]).select();
+    if (error && error.message && error.message.includes('ticket_entregado')) {
+      delete payload.ticket_entregado;
+      const reintento = await supabase.from('dinamicas').update(payload).eq('id', m[1]).select();
+      data = reintento.data;
+      error = reintento.error;
+    }
     if (error) throw new Error(error.message);
     if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
     return { ok: true, dinamica: data[0] };
