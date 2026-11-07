@@ -22,7 +22,7 @@ export default function Clientes({ avisar }) {
       else avisar('error', err.message);
     }
   };
-
+ 
   useEffect(() => { cargar(); }, []);
   useEffect(() => { setPagina(1); }, [lista]);
 

@@ -4,7 +4,7 @@
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['profiles','fardos','productos_fardo','clientes','empresas_bus','destinos_bus','ubicaciones','lugares_entrega','ventas','solicitudes_entrega']
+  FOREACH t IN ARRAY ARRAY['profiles','fardos','productos_fardo','clientes','empresas_bus','destinos_bus','ubicaciones','lugares_entrega','ventas','solicitudes_entrega','dinamicas','valores_dinamica']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS "auth_full" ON %I', t);

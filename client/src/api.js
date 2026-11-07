@@ -332,9 +332,9 @@ async function route(method, rawPath, body) {
 
   // ----- Clientes -----
   if (method === 'GET' && path === '/api/clientes') {
-    const { data, error } = await supabase
-      .from('clientes').select('*').order('created_at', { ascending: false }).limit(200);
-    if (error) throw new Error(error.message);
+    const data = await traerTodas(() =>
+      supabase.from('clientes').select('*').order('created_at', { ascending: false })
+    );
     return { clientes: data || [] };
   }
   if (method === 'POST' && path === '/api/clientes') {
@@ -382,6 +382,133 @@ async function route(method, rawPath, body) {
     if (error) throw new Error(error.message);
     if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
     return { ok: true, cliente: data[0] };
+  }
+
+  // ----- Dinámicas -----
+  if (method === 'GET' && path === '/api/dinamicas') {
+    const data = await traerTodas(() =>
+      supabase.from('dinamicas').select('*').order('created_at', { ascending: false })
+    );
+    return { dinamicas: data || [] };
+  }
+  if (method === 'GET' && path === '/api/dinamicas/siguiente') {
+    const dinamica = (q.get('dinamica') || '').trim();
+    const excluir = (q.get('excluir') || '').trim();
+    if (!dinamica) return { siguiente: 1 };
+    let consulta = supabase.from('dinamicas').select('*').eq('dinamica_nombre', dinamica);
+    if (excluir) consulta = consulta.neq('id', excluir);
+    const { data, error } = await consulta;
+    if (error) throw new Error(error.message);
+    let max = 0;
+    (data || []).forEach((d) => {
+      if (d.numero_hasta !== null && d.numero_hasta !== undefined && d.numero_hasta !== '') {
+        max = Math.max(max, Number(d.numero_hasta) || 0);
+      } else if (d.n_ticket) {
+        String(d.n_ticket).split(/[^0-9]+/).filter(Boolean).forEach((n) => {
+          max = Math.max(max, Number(n) || 0);
+        });
+      }
+    });
+    return { siguiente: max + 1 };
+  }
+  if (method === 'POST' && path === '/api/dinamicas') {
+    const { celular_cliente, nombre_completo, monto_compra, n_ticket, fecha_compra, dinamica_nombre, valor_dinamica, numero_desde, numero_hasta } = body || {};
+    if (!celular_cliente || !String(celular_cliente).trim()) throw new Error('El celular del cliente es obligatorio.');
+    if (!nombre_completo || !String(nombre_completo).trim()) throw new Error('El nombre completo es obligatorio.');
+    if (monto_compra === undefined || monto_compra === null || monto_compra === '') {
+      throw new Error('El monto de compra es obligatorio.');
+    }
+    const { data, error } = await supabase.from('dinamicas').insert({
+      celular_cliente: String(celular_cliente).trim(),
+      nombre_completo: String(nombre_completo).trim(),
+      monto_compra: Number(monto_compra),
+      n_ticket: n_ticket ? String(n_ticket).trim() : null,
+      fecha_compra: fecha_compra ? String(fecha_compra).trim() : new Date().toISOString().slice(0, 10),
+      dinamica_nombre: dinamica_nombre ? String(dinamica_nombre).trim() : null,
+      valor_dinamica: valor_dinamica !== undefined && valor_dinamica !== null && valor_dinamica !== '' ? Number(valor_dinamica) : null,
+      numero_desde: numero_desde !== undefined && numero_desde !== null && numero_desde !== '' ? parseInt(numero_desde, 10) : null,
+      numero_hasta: numero_hasta !== undefined && numero_hasta !== null && numero_hasta !== '' ? parseInt(numero_hasta, 10) : null
+    }).select().single();
+    if (error) throw new Error(error.message);
+    return { ok: true, dinamica: data };
+  }
+  if ((m = path.match(/^\/api\/dinamicas\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
+    if (method === 'DELETE') {
+      const { data, error } = await supabase.from('dinamicas').delete().eq('id', m[1]).select();
+      if (error) throw new Error(error.message);
+      if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+      return { ok: true };
+    }
+    const { celular_cliente, nombre_completo, monto_compra, n_ticket, fecha_compra, dinamica_nombre, valor_dinamica, numero_desde, numero_hasta } = body || {};
+    if (!celular_cliente || !String(celular_cliente).trim()) throw new Error('El celular del cliente es obligatorio.');
+    if (!nombre_completo || !String(nombre_completo).trim()) throw new Error('El nombre completo es obligatorio.');
+    if (monto_compra === undefined || monto_compra === null || monto_compra === '') {
+      throw new Error('El monto de compra es obligatorio.');
+    }
+    const { data, error } = await supabase.from('dinamicas').update({
+      celular_cliente: String(celular_cliente).trim(),
+      nombre_completo: String(nombre_completo).trim(),
+      monto_compra: Number(monto_compra),
+      n_ticket: n_ticket ? String(n_ticket).trim() : null,
+      fecha_compra: fecha_compra ? String(fecha_compra).trim() : null,
+      dinamica_nombre: dinamica_nombre ? String(dinamica_nombre).trim() : null,
+      valor_dinamica: valor_dinamica !== undefined && valor_dinamica !== null && valor_dinamica !== '' ? Number(valor_dinamica) : null,
+      numero_desde: numero_desde !== undefined && numero_desde !== null && numero_desde !== '' ? parseInt(numero_desde, 10) : null,
+      numero_hasta: numero_hasta !== undefined && numero_hasta !== null && numero_hasta !== '' ? parseInt(numero_hasta, 10) : null
+    }).eq('id', m[1]).select();
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+    return { ok: true, dinamica: data[0] };
+  }
+
+  // ----- Valores de dinámica -----
+  if (method === 'GET' && path === '/api/valores-dinamica') {
+    const { data, error } = await supabase
+      .from('valores_dinamica').select('*').order('nombre').limit(200);
+    if (error) throw new Error(error.message);
+    return { valores: data || [] };
+  }
+  if (method === 'POST' && path === '/api/valores-dinamica') {
+    const { nombre, valor } = body || {};
+    if (!nombre || !String(nombre).trim()) throw new Error('El nombre de la dinámica es obligatorio.');
+    if (valor === undefined || valor === null || valor === '') throw new Error('El valor de la dinámica es obligatorio.');
+    const nom = String(nombre).trim();
+    const { data: existe } = await supabase.from('valores_dinamica').select('id').ilike('nombre', nom).limit(1);
+    if (existe && existe.length) throw new Error('¡Ya existe una dinámica con ese nombre!');
+    const { data, error } = await supabase.from('valores_dinamica').insert({
+      nombre: nom,
+      valor: Number(valor)
+    }).select().single();
+    if (error) {
+      if (error.code === '23505') throw new Error('¡Ya existe una dinámica con ese nombre!');
+      throw new Error(error.message);
+    }
+    return { ok: true, valorDinamica: data };
+  }
+  if ((m = path.match(/^\/api\/valores-dinamica\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
+    if (method === 'DELETE') {
+      const { data, error } = await supabase.from('valores_dinamica').delete().eq('id', m[1]).select();
+      if (error) throw new Error(error.message);
+      if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+      return { ok: true };
+    }
+    const { nombre, valor } = body || {};
+    if (!nombre || !String(nombre).trim()) throw new Error('El nombre de la dinámica es obligatorio.');
+    if (valor === undefined || valor === null || valor === '') throw new Error('El valor de la dinámica es obligatorio.');
+    const nom = String(nombre).trim();
+    const { data: otro } = await supabase
+      .from('valores_dinamica').select('id').ilike('nombre', nom).neq('id', m[1]).limit(1);
+    if (otro && otro.length) throw new Error('¡Ya existe una dinámica con ese nombre!');
+    const { data, error } = await supabase.from('valores_dinamica').update({
+      nombre: nom,
+      valor: Number(valor)
+    }).eq('id', m[1]).select();
+    if (error) {
+      if (error.code === '23505') throw new Error('¡Ya existe una dinámica con ese nombre!');
+      throw new Error(error.message);
+    }
+    if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+    return { ok: true, valorDinamica: data[0] };
   }
 
   // ----- Buses -----

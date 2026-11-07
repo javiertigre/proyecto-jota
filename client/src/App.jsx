@@ -12,6 +12,7 @@ import SolicitudesEntrega from './components/SolicitudesEntrega.jsx';
 import Ventas from './components/Ventas.jsx';
 import ReporteVentas from './components/ReporteVentas.jsx';
 import Analisis from './components/Analisis.jsx';
+import Dinamicas from './components/Dinamicas.jsx';
 
 // Pestaña inicial según tipo de usuario
 function tabInicial(rol) {
@@ -81,7 +82,7 @@ export default function App() {
   const esAdmin = rol === 'admin';
   const puede = (t) => esAdmin || (rol === 'registro' && t === 'registro') || (rol === 'entregas' && t === 'entregas');
 
-  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'ubicaciones', 'lugares_entrega', 'cuentas'].includes(tab);
+  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'ubicaciones', 'lugares_entrega', 'cuentas', 'dinamicas'].includes(tab);
   const irTab = (t) => {
     setTab(t);
     setMenuAbierto(false);
@@ -96,6 +97,7 @@ export default function App() {
     if (opcion === 'ubicaciones') irTab('ubicaciones');
     if (opcion === 'lugares_entrega') irTab('lugares_entrega');
     if (opcion === 'cuentas') irTab('cuentas');
+    if (opcion === 'dinamicas') irTab('dinamicas');
   };
 
   const nombre = sesion.profile?.full_name || sesion.user?.email;
@@ -129,6 +131,7 @@ export default function App() {
               <button onClick={() => elegirConfig('ubicaciones')}>📍 Ubicación del Producto</button>
               <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Registro de Entregas</button>
               <button onClick={() => elegirConfig('cuentas')}>🔑 Administrar Cuentas</button>
+              <button onClick={() => elegirConfig('dinamicas')}>🎯 Dinámicas</button>
             </div>
           </div>
           )}
@@ -159,6 +162,7 @@ export default function App() {
             <button onClick={() => elegirConfig('ubicaciones')}>📍 Ubicación del Producto</button>
             <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Registro de Entregas</button>
             <button onClick={() => elegirConfig('cuentas')}>🔑 Administrar Cuentas</button>
+            <button onClick={() => elegirConfig('dinamicas')}>🎯 Dinámicas</button>
           </div>
           {verCuadre && (
             <div style={{ marginTop: 15, padding: 15, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8 }}>
@@ -191,6 +195,10 @@ export default function App() {
 
       {esAdmin && tab === 'cuentas' && (
         <Cuentas avisar={avisar} />
+      )}
+
+      {esAdmin && tab === 'dinamicas' && (
+        <Dinamicas avisar={avisar} />
       )}
 
       {puede('registro') && tab === 'registro' && (
