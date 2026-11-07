@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { generarExcel } from '../excel.js';
 import Paginacion from './Paginacion.jsx';
 import ValoresDinamica from './ValoresDinamica.jsx';
 
@@ -34,6 +35,7 @@ export default function Dinamicas({ avisar }) {
   const [verValores, setVerValores] = useState(false);
   const [busquedaTicket, setBusquedaTicket] = useState('');
   const [pagina, setPagina] = useState(1);
+  const [generandoExcel, setGenerandoExcel] = useState(false);
   const POR_PAGINA = 10;
 
   const cargar = async () => {
@@ -363,6 +365,391 @@ export default function Dinamicas({ avisar }) {
   const visibles = busquedaTicket.trim() ? coincidencias : lista;
   const paginados = visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
 
+  const desglosarTickets = (items) => {
+    const res = [];
+    (items || []).forEach((x) => {
+      const celular = x.celular_cliente || '';
+      const cliente = x.nombre_completo || '';
+      const dinamica = x.dinamica_nombre || '';
+      const fecha = x.fecha_compra || '';
+
+      const tieneRango = x.numero_desde !== null && x.numero_desde !== undefined && x.numero_desde !== '' &&
+                         x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
+
+      if (tieneRango) {
+        const d = Number(x.numero_desde);
+        const h = Number(x.numero_hasta);
+        if (!isNaN(d) && !isNaN(h) && h >= d) {
+          for (let n = d; n <= h; n++) {
+            res.push({
+              numero: n,
+              numeroTexto: String(n).padStart(3, '0'),
+              celular,
+              cliente,
+              dinamica,
+              fecha
+            });
+          }
+          return;
+        }
+      }
+
+      if (x.n_ticket) {
+        const partes = String(x.n_ticket).split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean);
+        partes.forEach((p) => {
+          if (p.includes('-')) {
+            const trozos = p.split('-');
+            if (trozos.length === 2) {
+              const ini = parseInt(trozos[0].trim(), 10);
+              const fin = parseInt(trozos[1].trim(), 10);
+              if (!isNaN(ini) && !isNaN(fin) && fin >= ini) {
+                for (let n = ini; n <= fin; n++) {
+                  res.push({
+                    numero: n,
+                    numeroTexto: String(n).padStart(3, '0'),
+                    celular,
+                    cliente,
+                    dinamica,
+                    fecha
+                  });
+                }
+                return;
+              }
+            }
+          }
+          const num = parseInt(p, 10);
+          res.push({
+            numero: isNaN(num) ? 0 : num,
+            numeroTexto: isNaN(num) ? p : String(num).padStart(3, '0'),
+            celular,
+            cliente,
+            dinamica,
+            fecha
+          });
+        });
+      }
+    });
+
+    res.sort((a, b) => a.numero - b.numero);
+    return res;
+  };
+
+  const exportarSorteoExcel = async () => {
+    const origen = visibles.length > 0 && busquedaTicket.trim() ? visibles : lista;
+    const tickets = desglosarTickets(origen);
+    if (tickets.length === 0) {
+      avisar('error', 'No hay boletos o dinámicas registradas para exportar.');
+      return;
+    }
+    setGenerandoExcel(true);
+    try {
+      const filas = tickets.map((t) => [
+        'GRAN SORTEO EL 27 DE NOVIEMBRE',
+        t.numero,
+        t.celular,
+        t.cliente,
+        t.dinamica,
+        t.fecha
+      ]);
+
+      await generarExcel({
+        nombre: 'gran_sorteo_27_noviembre_boletos',
+        columnas: [
+          { header: 'Cabecera / Evento', key: 'cabecera', width: 34 },
+          { header: 'N° Ticket', key: 'numero', width: 14 },
+          { header: 'Celular Cliente', key: 'celular', width: 18 },
+          { header: 'Nombre del Cliente', key: 'cliente', width: 32 },
+          { header: 'Dinámica', key: 'dinamica', width: 26 },
+          { header: 'Fecha de Compra', key: 'fecha', width: 16 }
+        ],
+        filas,
+        fotos: []
+      });
+      avisar('exito', 'Reporte Excel generado (' + tickets.length + ' boletos).');
+    } catch (err) {
+      avisar('error', 'Error al generar Excel: ' + err.message);
+    } finally {
+      setGenerandoExcel(false);
+    }
+  };
+
+  const exportarSorteoPDF = () => {
+    const origen = visibles.length > 0 && busquedaTicket.trim() ? visibles : lista;
+    const tickets = desglosarTickets(origen);
+    if (tickets.length === 0) {
+      avisar('error', 'No hay boletos para generar el PDF.');
+      return;
+    }
+
+    const titulo = 'Gran Sorteo el 27 de Noviembre — Boletos';
+    const fecha = new Date().toLocaleString();
+    const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const POR_HOJA = 4 * 5;
+    const hojas = [];
+
+    const celdas = (t) => `
+      <div class="ticket">
+        <div class="ticket-header">GRAN SORTEO EL 27 DE NOVIEMBRE</div>
+        <div class="ticket-body">
+          <div class="ticket-label">N° DE TICKET</div>
+          <div class="ticket-numero">N° ${escH(t.numeroTexto)}</div>
+          <div class="ticket-celular">📱 ${escH(t.celular)}</div>
+          <div class="ticket-cliente">👤 ${escH(t.cliente)}</div>
+          ${t.dinamica ? `<div class="ticket-dinamica">${escH(t.dinamica)}</div>` : ''}
+        </div>
+      </div>
+    `;
+
+    for (let i = 0; i < tickets.length; i += POR_HOJA) {
+      const lote = tickets.slice(i, i + POR_HOJA);
+      hojas.push(`
+        <div class="hoja">
+          <div class="hoja-header">
+            <span>GRAN SORTEO EL 27 DE NOVIEMBRE</span>
+            <span>Página ${Math.floor(i / POR_HOJA) + 1} de ${Math.ceil(tickets.length / POR_HOJA)}</span>
+          </div>
+          <div class="grid">${lote.map(celdas).join('')}</div>
+        </div>
+      `);
+    }
+
+    const filasTabla = tickets.map((t) => `
+      <tr>
+        <td style="font-weight:700;color:#0f172a">GRAN SORTEO EL 27 DE NOVIEMBRE</td>
+        <td style="font-size:14px;font-weight:800;color:#b91c1c;text-align:center">${escH(t.numeroTexto)}</td>
+        <td style="font-weight:700;color:#1d4ed8">${escH(t.celular)}</td>
+        <td style="font-weight:600">${escH(t.cliente)}</td>
+        <td>${escH(t.dinamica || '—')}</td>
+        <td>${escH(t.fecha || '—')}</td>
+      </tr>
+    `).join('');
+
+    const w = window.open('', '_blank');
+    if (!w) return;
+
+    w.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escH(titulo)}</title>
+        <style>
+          @page {
+            size: letter portrait;
+            margin: 6mm 6mm 6mm 6mm;
+          }
+          * { box-sizing: border-box; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 4px;
+            color: #111827;
+            background: #ffffff;
+          }
+          .no-print {
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+          .no-print button {
+            background: #1e293b;
+            color: #ffffff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 13px;
+          }
+          .no-print button:hover { background: #0f172a; }
+          .no-print .btn-sec {
+            background: #e2e8f0;
+            color: #1e293b;
+          }
+          .no-print .btn-sec:hover { background: #cbd5e1; }
+          .hoja {
+            page-break-after: always;
+            break-after: page;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 12px;
+          }
+          .hoja:last-child {
+            page-break-after: auto;
+            break-after: auto;
+            margin-bottom: 0;
+          }
+          .hoja-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: #64748b;
+            margin-bottom: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+          }
+          .ticket {
+            border: 1.5px dashed #475569;
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            background: #ffffff;
+            height: 48mm;
+          }
+          .ticket-header {
+            background: #0f172a;
+            color: #ffffff;
+            text-align: center;
+            font-size: 8px;
+            font-weight: 800;
+            padding: 3px 2px;
+            letter-spacing: 0.5px;
+            line-height: 1.2;
+            text-transform: uppercase;
+          }
+          .ticket-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 4px;
+            text-align: center;
+          }
+          .ticket-label {
+            font-size: 8px;
+            color: #64748b;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+          }
+          .ticket-numero {
+            font-size: 21px;
+            font-weight: 900;
+            color: #dc2626;
+            line-height: 1.1;
+            margin: 2px 0;
+          }
+          .ticket-celular {
+            font-size: 11px;
+            font-weight: 800;
+            color: #1d4ed8;
+            margin: 1px 0;
+          }
+          .ticket-cliente {
+            font-size: 10px;
+            font-weight: 700;
+            color: #111827;
+            line-height: 1.15;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+          }
+          .ticket-dinamica {
+            font-size: 8px;
+            color: #64748b;
+            margin-top: 3px;
+            border-top: 1px dashed #cbd5e1;
+            width: 90%;
+            padding-top: 2px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 8px;
+          }
+          th, td {
+            border: 1px solid #94a3b8;
+            padding: 6px 8px;
+            text-align: left;
+          }
+          th {
+            background: #0f172a;
+            color: #ffffff;
+            font-weight: 700;
+          }
+          tr:nth-child(even) { background: #f8fafc; }
+          @media print {
+            .no-print { display: none !important; }
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print">
+          <div>
+            <strong style="font-size:15px;color:#0f172a">🎯 GRAN SORTEO EL 27 DE NOVIEMBRE</strong>
+            <div style="font-size:12px;color:#64748b;margin-top:2px">
+              ${tickets.length} boletos generados · ${fecha}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+            <button class="btn-sec" onclick="
+              var vC = document.getElementById('vista-cupones');
+              var vT = document.getElementById('vista-tabla');
+              if (vC.style.display === 'none') {
+                vC.style.display = 'block';
+                vT.style.display = 'none';
+                this.innerText = '📋 Ver formato tabla';
+              } else {
+                vC.style.display = 'none';
+                vT.style.display = 'block';
+                this.innerText = '🎟️ Ver formato boletos para recortar';
+              }
+            ">📋 Ver formato tabla</button>
+          </div>
+        </div>
+
+        <div id="vista-cupones">
+          ${hojas.join('')}
+        </div>
+
+        <div id="vista-tabla" style="display:none">
+          <h2 style="margin:0 0 4px">GRAN SORTEO EL 27 DE NOVIEMBRE</h2>
+          <p style="color:#64748b;margin:0 0 10px;font-size:12px">${tickets.length} boletos registrados · ${fecha}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Evento</th>
+                <th style="text-align:center">N° Ticket</th>
+                <th>Celular Cliente</th>
+                <th>Nombre del Cliente</th>
+                <th>Dinámica</th>
+                <th>Fecha Compra</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filasTabla}
+            </tbody>
+          </table>
+        </div>
+      </body>
+      </html>
+    `);
+    w.document.close();
+    w.focus();
+  };
+
   return (
     <>
       <div className="card">
@@ -454,7 +841,27 @@ export default function Dinamicas({ avisar }) {
 
       {!faltaTabla && (
         <div className="card">
-          <h2>📋 Dinámicas registradas ({lista.length})</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+            <h2 style={{ margin: 0 }}>📋 Dinámicas registradas ({lista.length})</h2>
+            <div className="actions" style={{ margin: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-entregar"
+                onClick={exportarSorteoExcel}
+                disabled={generandoExcel || lista.length === 0}
+              >
+                {generandoExcel ? 'Generando Excel...' : '📥 Boletos Excel (Sorteo 27 Nov)'}
+              </button>
+              <button
+                type="button"
+                className="btn-edit"
+                onClick={exportarSorteoPDF}
+                disabled={lista.length === 0}
+              >
+                📄 Boletos PDF (Sorteo 27 Nov)
+              </button>
+            </div>
+          </div>
 
           {/* BUSCADOR POR NÚMERO DE TICKET */}
           <div style={{
