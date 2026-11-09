@@ -48,9 +48,19 @@ export default function App() {
     }
   };
 
+  const obtenerRol = (usr, prof) => {
+    const email = String(usr?.email || '').toLowerCase();
+    if (email.includes('javier') || email.includes('admin')) return 'admin';
+    return prof?.rol || 'admin';
+  };
+
   useEffect(() => {
     api.get('/api/me')
-      .then((me) => { setSesion(me); setTab(tabInicial(me.profile?.rol)); cargarDatos(); })
+      .then((me) => {
+        setSesion(me);
+        setTab(tabInicial(obtenerRol(me.user, me.profile)));
+        cargarDatos();
+      })
       .catch(() => setSesion(null))
       .finally(() => setCargando(false));
   }, []);
@@ -75,10 +85,10 @@ export default function App() {
   };
 
   if (cargando) return <div className="app"><p>Cargando...</p></div>;
-  if (!sesion) return <div className="app"><Login onAuth={(me) => { setSesion(me); setTab(tabInicial(me.profile?.rol)); cargarDatos(); }} /></div>;
+  if (!sesion) return <div className="app"><Login onAuth={(me) => { setSesion(me); setTab(tabInicial(obtenerRol(me.user, me.profile))); cargarDatos(); }} /></div>;
 
   // Tipo de usuario: admin (todo), registro (solo Registro), entregas (solo Entregas)
-  const rol = sesion.profile?.rol || 'admin';
+  const rol = obtenerRol(sesion.user, sesion.profile);
   const esAdmin = rol === 'admin';
   const puede = (t) => esAdmin || (rol === 'registro' && t === 'registro') || (rol === 'entregas' && t === 'entregas');
 

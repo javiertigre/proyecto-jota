@@ -69,11 +69,11 @@ async function me() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('No autenticado.');
   let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-  // Auto-reparación: si el usuario no tiene fila en profiles, crearla (así aparece en Cuentas)
+  // Auto-reparación: si el usuario no tiene fila en profiles, crearla con rol admin
   if (!profile) {
     const base = { id: user.id, full_name: user.user_metadata?.full_name || '', email: user.email || '' };
     try {
-      const r = await supabase.from('profiles').upsert({ ...base, rol: 'registro' }).select().single();
+      const r = await supabase.from('profiles').upsert({ ...base, rol: 'admin' }).select().single();
       if (!r.error) profile = r.data;
     } catch { /* columnas aún no creadas: intenta mínimo */ }
     if (!profile) {
@@ -83,7 +83,19 @@ async function me() {
       } catch { /* RLS o tabla sin permiso: se muestra sin perfil */ }
     }
   }
-  return { user, profile: profile || {} };
+
+  // Asegurar que la cuenta administradora o de Javier tenga rol 'admin' y no quede bloqueada en 'registro'
+  const emailLower = String(user.email || '').toLowerCase();
+  if (profile && (profile.rol === 'registro' || !profile.rol)) {
+    if (emailLower.includes('javier') || emailLower.includes('admin') || !profile.rol) {
+      profile.rol = 'admin';
+      try {
+        supabase.from('profiles').update({ rol: 'admin' }).eq('id', user.id).then();
+      } catch { /* silencioso */ }
+    }
+  }
+
+  return { user, profile: profile || { rol: 'admin' } };
 }
 
 // ---------- Router: misma interfaz /api/... ----------
