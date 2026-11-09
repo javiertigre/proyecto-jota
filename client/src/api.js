@@ -404,9 +404,10 @@ async function route(method, rawPath, body) {
     return { dinamicas: data || [] };
   }
   if (method === 'GET' && path === '/api/dinamicas/siguiente') {
+    const dinamica = (q.get('dinamica') || '').trim();
     const excluir = (q.get('excluir') || '').trim();
-    // Consulta TODOS los registros de dinámicas para respetar el último número general correlativo del sorteo
-    let consulta = supabase.from('dinamicas').select('*');
+    if (!dinamica) return { siguiente: 1 };
+    let consulta = supabase.from('dinamicas').select('*').eq('dinamica_nombre', dinamica);
     if (excluir) consulta = consulta.neq('id', excluir);
     const { data, error } = await consulta;
     if (error) throw new Error(error.message);
@@ -414,11 +415,7 @@ async function route(method, rawPath, body) {
     (data || []).forEach((d) => {
       if (d.numero_hasta !== null && d.numero_hasta !== undefined && d.numero_hasta !== '') {
         max = Math.max(max, Number(d.numero_hasta) || 0);
-      }
-      if (d.numero_desde !== null && d.numero_desde !== undefined && d.numero_desde !== '') {
-        max = Math.max(max, Number(d.numero_desde) || 0);
-      }
-      if (d.n_ticket) {
+      } else if (d.n_ticket) {
         String(d.n_ticket).split(/[^0-9]+/).filter(Boolean).forEach((n) => {
           max = Math.max(max, Number(n) || 0);
         });

@@ -187,65 +187,35 @@ export default function Dinamicas({ avisar }) {
     let max = 0;
     (lista || []).forEach((d) => {
       if (excluirId && String(d.id) === String(excluirId)) return;
-      if (d.numero_hasta !== null && d.numero_hasta !== undefined && d.numero_hasta !== '') {
-        max = Math.max(max, Number(d.numero_hasta) || 0);
-      }
-      if (d.numero_desde !== null && d.numero_desde !== undefined && d.numero_desde !== '') {
-        max = Math.max(max, Number(d.numero_desde) || 0);
-      }
-      if (d.n_ticket) {
+      if (d.n_ticket && String(d.n_ticket).trim()) {
         String(d.n_ticket).split(/[^0-9]+/).filter(Boolean).forEach((n) => {
           max = Math.max(max, Number(n) || 0);
         });
+      } else if (d.numero_hasta !== null && d.numero_hasta !== undefined && d.numero_hasta !== '') {
+        max = Math.max(max, Number(d.numero_hasta) || 0);
       }
     });
     return max;
   };
 
-  const generarNumero = async () => {
+  const generarNumero = () => {
     const dinamica = String(form.dinamica_nombre || '').trim();
-    const monto = Number(form.monto_compra);
-    const valor = Number(form.valor_dinamica);
     if (!dinamica) {
       avisar('error', 'Primero selecciona una dinámica arriba en Valor Dinámica.');
       return;
     }
-    if (!monto || monto <= 0) {
-      avisar('error', 'Ingresa un monto de compra válido.');
-      return;
-    }
-    if (!valor || valor <= 0) {
-      avisar('error', 'Selecciona una dinámica con valor válido.');
-      return;
-    }
-    // Mínimo 1 boleto por compra (si el monto alcanza para más, divide)
-    const cantidadCalc = Math.floor(monto / valor);
-    const cantidad = cantidadCalc >= 1 ? cantidadCalc : 1;
-
-    // Respetar estrictamente el último número registrado en la lista
+    // Respetar estrictamente el último número correlativo registrado
     const ultimo = obtenerUltimoTicketRegistrado(editId);
-    let desde = ultimo + 1;
+    const siguiente = ultimo + 1;
 
-    // También consultamos al backend por si hay registros en la base de datos
-    try {
-      const r = await api.get('/api/dinamicas/siguiente' + (editId ? '?excluir=' + editId : ''));
-      if (r && r.siguiente && r.siguiente === desde) {
-        desde = r.siguiente;
-      }
-    } catch {
-      // Usa el cálculo local seguro sobre lista
-    }
-
-    const hasta = desde + cantidad - 1;
-    const numeros = [];
-    for (let n = desde; n <= hasta; n++) numeros.push(n);
     setForm((prev) => ({
       ...prev,
-      n_ticket: numeros.join(', '),
-      numero_desde: desde,
-      numero_hasta: hasta
+      n_ticket: String(siguiente),
+      numero_desde: siguiente,
+      numero_hasta: siguiente
     }));
-    avisar('exito', `Generado boleto #${numeros.join(', #')} (siguiendo al último boleto registrado #${ultimo}).`);
+
+    avisar('exito', `Generado boleto #${siguiente} (siguiendo al último boleto registrado #${ultimo}).`);
   };
 
   const cancelar = () => {
@@ -314,12 +284,32 @@ export default function Dinamicas({ avisar }) {
         }
       }
 
+      // Sincronizar numero_desde y numero_hasta con n_ticket para que nunca queden rangos viejos
+      let numDesde = null;
+      let numHasta = null;
+      if (form.n_ticket && String(form.n_ticket).trim()) {
+        const nums = String(form.n_ticket).split(/[^0-9]+/).filter(Boolean).map(Number);
+        if (nums.length === 1) {
+          numDesde = nums[0];
+          numHasta = nums[0];
+        } else if (nums.length > 1) {
+          numDesde = Math.min(...nums);
+          numHasta = Math.max(...nums);
+        }
+      }
+
+      const datosGuardar = {
+        ...form,
+        numero_desde: numDesde,
+        numero_hasta: numHasta
+      };
+
       if (editId) {
-        await api.put('/api/dinamicas/' + editId, form);
+        await api.put('/api/dinamicas/' + editId, datosGuardar);
         avisar('exito', 'Dinámica actualizada.');
         cancelar();
       } else {
-        await api.post('/api/dinamicas', form);
+        await api.post('/api/dinamicas', datosGuardar);
         avisar(
           'exito',
           'Comprador registrado en la dinámica' + (nuevoClienteRegistrado ? ' y agregado a Clientes.' : '.')
@@ -445,30 +435,8 @@ export default function Dinamicas({ avisar }) {
       const fecha = x.fecha_compra || '';
       const estado = x.ticket_entregado || 'Pendiente';
 
-      const tieneRango = x.numero_desde !== null && x.numero_desde !== undefined && x.numero_desde !== '' &&
-                         x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
-
-      if (tieneRango) {
-        const d = Number(x.numero_desde);
-        const h = Number(x.numero_hasta);
-        if (!isNaN(d) && !isNaN(h) && h >= d) {
-          for (let n = d; n <= h; n++) {
-            res.push({
-              id: x.id,
-              numero: n,
-              numeroTexto: String(n).padStart(3, '0'),
-              celular,
-              cliente,
-              dinamica,
-              fecha,
-              ticket_entregado: estado
-            });
-          }
-          return;
-        }
-      }
-
-      if (x.n_ticket) {
+      // 1. Usar n_ticket como fuente principal (lo que se ve en la lista)
+      if (x.n_ticket && String(x.n_ticket).trim()) {
         const partes = String(x.n_ticket).split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean);
         partes.forEach((p) => {
           if (p.includes('-')) {
@@ -505,6 +473,30 @@ export default function Dinamicas({ avisar }) {
             ticket_entregado: estado
           });
         });
+        return;
+      }
+
+      // 2. Solo si n_ticket no está presente, usar numero_desde y numero_hasta
+      const tieneRango = x.numero_desde !== null && x.numero_desde !== undefined && x.numero_desde !== '' &&
+                         x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
+      if (tieneRango) {
+        const d = Number(x.numero_desde);
+        const h = Number(x.numero_hasta);
+        if (!isNaN(d) && !isNaN(h) && h >= d) {
+          for (let n = d; n <= h; n++) {
+            res.push({
+              id: x.id,
+              numero: n,
+              numeroTexto: String(n).padStart(3, '0'),
+              celular,
+              cliente,
+              dinamica,
+              fecha,
+              ticket_entregado: estado
+            });
+          }
+          return;
+        }
       }
     });
 
@@ -1033,14 +1025,9 @@ export default function Dinamicas({ avisar }) {
               <input name="monto_compra" type="number" step="0.01" min="0" value={form.monto_compra} onChange={cambiar} required />
             </div>
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ margin: 0 }}>N° Ticket</label>
-                <small style={{ color: '#0369a1', fontWeight: 700, fontSize: '11px' }}>
-                  Último: #{obtenerUltimoTicketRegistrado(editId)} → Siguiente: #{obtenerUltimoTicketRegistrado(editId) + 1}
-                </small>
-              </div>
+              <label>N° Ticket</label>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input name="n_ticket" value={form.n_ticket} onChange={cambiar} style={{ flex: 1 }} placeholder="Ej: 33" />
+                <input name="n_ticket" value={form.n_ticket} onChange={cambiar} style={{ flex: 1 }} />
                 <button type="button" onClick={generarNumero} style={{ whiteSpace: 'nowrap' }}>Generar Numero</button>
               </div>
             </div>
@@ -1073,7 +1060,7 @@ export default function Dinamicas({ avisar }) {
             <div>
               <h2 style={{ margin: 0 }}>📋 Dinámicas registradas ({lista.length})</h2>
               <small style={{ color: '#64748b', fontSize: '12px' }}>
-                Último boleto registrado: <strong style={{ color: '#0369a1' }}>#{obtenerUltimoTicketRegistrado()}</strong> · Los reportes solo muestran boletos con estado <strong>Pendiente</strong>.
+                Los reportes solo muestran boletos con estado <strong>Pendiente</strong>. Los entregados no se imprimen.
               </small>
             </div>
             <div className="actions" style={{ margin: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
