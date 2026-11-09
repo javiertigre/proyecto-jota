@@ -183,6 +183,25 @@ export default function Dinamicas({ avisar }) {
     }));
   };
 
+  const obtenerUltimoTicketRegistrado = (excluirId = null) => {
+    let max = 0;
+    (lista || []).forEach((d) => {
+      if (excluirId && String(d.id) === String(excluirId)) return;
+      if (d.numero_hasta !== null && d.numero_hasta !== undefined && d.numero_hasta !== '') {
+        max = Math.max(max, Number(d.numero_hasta) || 0);
+      }
+      if (d.numero_desde !== null && d.numero_desde !== undefined && d.numero_desde !== '') {
+        max = Math.max(max, Number(d.numero_desde) || 0);
+      }
+      if (d.n_ticket) {
+        String(d.n_ticket).split(/[^0-9]+/).filter(Boolean).forEach((n) => {
+          max = Math.max(max, Number(n) || 0);
+        });
+      }
+    });
+    return max;
+  };
+
   const generarNumero = async () => {
     const dinamica = String(form.dinamica_nombre || '').trim();
     const monto = Number(form.monto_compra);
@@ -199,23 +218,34 @@ export default function Dinamicas({ avisar }) {
       avisar('error', 'Selecciona una dinámica con valor válido.');
       return;
     }
-    const cantidad = Math.round(monto / valor);
-    if (cantidad < 1) {
-      avisar('error', 'El monto de compra no alcanza para generar un número.');
-      return;
-    }
+    // Mínimo 1 boleto por compra (si el monto alcanza para más, divide)
+    const cantidadCalc = Math.floor(monto / valor);
+    const cantidad = cantidadCalc >= 1 ? cantidadCalc : 1;
+
+    // Respetar estrictamente el último número registrado en la lista
+    const ultimo = obtenerUltimoTicketRegistrado(editId);
+    let desde = ultimo + 1;
+
+    // También consultamos al backend por si hay registros en la base de datos
     try {
-      const r = await api.get(
-        '/api/dinamicas/siguiente?dinamica=' + encodeURIComponent(dinamica) + (editId ? '&excluir=' + editId : '')
-      );
-      const desde = r.siguiente;
-      const hasta = desde + cantidad - 1;
-      const numeros = [];
-      for (let n = desde; n <= hasta; n++) numeros.push(n);
-      setForm((prev) => ({ ...prev, n_ticket: numeros.join(', '), numero_desde: desde, numero_hasta: hasta }));
-    } catch (err) {
-      avisar('error', err.message);
+      const r = await api.get('/api/dinamicas/siguiente' + (editId ? '?excluir=' + editId : ''));
+      if (r && r.siguiente && r.siguiente === desde) {
+        desde = r.siguiente;
+      }
+    } catch {
+      // Usa el cálculo local seguro sobre lista
     }
+
+    const hasta = desde + cantidad - 1;
+    const numeros = [];
+    for (let n = desde; n <= hasta; n++) numeros.push(n);
+    setForm((prev) => ({
+      ...prev,
+      n_ticket: numeros.join(', '),
+      numero_desde: desde,
+      numero_hasta: hasta
+    }));
+    avisar('exito', `Generado boleto #${numeros.join(', #')} (siguiendo al último boleto registrado #${ultimo}).`);
   };
 
   const cancelar = () => {
@@ -1003,9 +1033,14 @@ export default function Dinamicas({ avisar }) {
               <input name="monto_compra" type="number" step="0.01" min="0" value={form.monto_compra} onChange={cambiar} required />
             </div>
             <div>
-              <label>N° Ticket</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <label style={{ margin: 0 }}>N° Ticket</label>
+                <small style={{ color: '#0369a1', fontWeight: 700, fontSize: '11px' }}>
+                  Último: #{obtenerUltimoTicketRegistrado(editId)} → Siguiente: #{obtenerUltimoTicketRegistrado(editId) + 1}
+                </small>
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input name="n_ticket" value={form.n_ticket} onChange={cambiar} style={{ flex: 1 }} />
+                <input name="n_ticket" value={form.n_ticket} onChange={cambiar} style={{ flex: 1 }} placeholder="Ej: 33" />
                 <button type="button" onClick={generarNumero} style={{ whiteSpace: 'nowrap' }}>Generar Numero</button>
               </div>
             </div>
@@ -1038,7 +1073,7 @@ export default function Dinamicas({ avisar }) {
             <div>
               <h2 style={{ margin: 0 }}>📋 Dinámicas registradas ({lista.length})</h2>
               <small style={{ color: '#64748b', fontSize: '12px' }}>
-                Los reportes solo muestran boletos con estado <strong>Pendiente</strong>. Los entregados no se imprimen.
+                Último boleto registrado: <strong style={{ color: '#0369a1' }}>#{obtenerUltimoTicketRegistrado()}</strong> · Los reportes solo muestran boletos con estado <strong>Pendiente</strong>.
               </small>
             </div>
             <div className="actions" style={{ margin: 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
