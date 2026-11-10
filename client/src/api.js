@@ -3,10 +3,21 @@
 // Requiere VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY + políticas RLS (ver RLS.sql).
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const SUPABASE_URL_DEFAULT = 'https://weublsjmlnwuuragbofa.supabase.co';
+const SUPABASE_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndldWJsc2ptbG53dXVyYWdib2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1ODA4MzksImV4cCI6MjEwNjE1NjgzOX0.9xAhZd_5Wh3cmyegt00mLsNFbYKpCJUBZRQa4z2s4AQ';
+
+const envUrl = import.meta.env.VITE_SUPABASE_URL;
+const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const supabaseUrl = (envUrl && typeof envUrl === 'string' && envUrl.startsWith('http') && !envUrl.includes('SENSITIVE'))
+  ? envUrl.trim()
+  : SUPABASE_URL_DEFAULT;
+
+const supabaseKey = (envKey && typeof envKey === 'string' && envKey.length > 20 && !envKey.includes('SENSITIVE'))
+  ? envKey.trim()
+  : SUPABASE_KEY_DEFAULT;
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 function fotoUrl(ruta) {
   if (!ruta) return null;
