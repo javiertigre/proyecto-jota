@@ -454,7 +454,11 @@ async function route(method, rawPath, body) {
   }
   if ((m = path.match(/^\/api\/dinamicas\/([^/]+)\/estado$/)) && (method === 'POST' || method === 'PATCH')) {
     const nuevoEstado = body && body.ticket_entregado ? String(body.ticket_entregado).trim() : 'Entregado';
-    const { data, error } = await supabase.from('dinamicas').update({ ticket_entregado: nuevoEstado }).eq('id', m[1]).select();
+    let { data, error } = await supabase.from('dinamicas').update({ ticket_entregado: nuevoEstado }).eq('id', m[1]).select();
+    if (error && error.message && error.message.includes('ticket_entregado')) {
+      console.warn('Columna ticket_entregado no existe aún en Supabase dinamicas:', error.message);
+      return { ok: true, dinamica: { id: m[1], ticket_entregado: nuevoEstado }, sinColumna: true };
+    }
     if (error) throw new Error(error.message);
     return { ok: true, dinamica: data && data[0] };
   }

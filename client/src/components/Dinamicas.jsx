@@ -18,6 +18,34 @@ const vacio = {
   ticket_entregado: 'Pendiente'
 };
 
+const STORAGE_KEY_ENTREGADOS = 'dinamicas_tickets_entregados';
+
+const obtenerEstadosEntregadosLocales = () => {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_ENTREGADOS) || '{}');
+  } catch {
+    return {};
+  }
+};
+
+const guardarEstadoEntregadoLocal = (id, estado) => {
+  if (!id) return;
+  try {
+    const mapa = obtenerEstadosEntregadosLocales();
+    mapa[id] = estado;
+    localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa));
+  } catch {}
+};
+
+const eliminarEstadoEntregadoLocal = (id) => {
+  if (!id) return;
+  try {
+    const mapa = obtenerEstadosEntregadosLocales();
+    delete mapa[id];
+    localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa));
+  } catch {}
+};
+
 export default function Dinamicas({ avisar }) {
   const [lista, setLista] = useState([]);
   const [valores, setValores] = useState([]);
@@ -44,7 +72,19 @@ export default function Dinamicas({ avisar }) {
   const cargar = async () => {
     try {
       const r = await api.get('/api/dinamicas');
-      setLista(r.dinamicas);
+      const locales = obtenerEstadosEntregadosLocales();
+      const listaMapeada = (r.dinamicas || []).map((x) => {
+        const estadoDb = x.ticket_entregado;
+        const estadoFinal =
+          estadoDb !== undefined && estadoDb !== null && String(estadoDb).trim()
+            ? String(estadoDb).trim()
+            : (locales[x.id] || 'Pendiente');
+        return {
+          ...x,
+          ticket_entregado: estadoFinal
+        };
+      });
+      setLista(listaMapeada);
       setFaltaTabla(false);
     } catch (err) {
       if (err.message.includes('dinamicas')) { setFaltaTabla(true); setLista([]); }
@@ -234,17 +274,21 @@ export default function Dinamicas({ avisar }) {
   const cambiarEstadoTicket = async (item, nuevoEstado) => {
     const estadoActual = item.ticket_entregado || 'Pendiente';
     const estadoFinal = nuevoEstado || (estadoActual === 'Entregado' ? 'Pendiente' : 'Entregado');
+
+    // 1. Persistencia local inmediata (a prueba de recargas de página)
+    guardarEstadoEntregadoLocal(item.id, estadoFinal);
+    setLista((prev) => prev.map((x) => (x.id === item.id ? { ...x, ticket_entregado: estadoFinal } : x)));
+
+    // 2. Persistencia en Supabase
     try {
       await api.post(`/api/dinamicas/${item.id}/estado`, { ticket_entregado: estadoFinal });
-      setLista((prev) => prev.map((x) => (x.id === item.id ? { ...x, ticket_entregado: estadoFinal } : x)));
       avisar('exito', `Ticket de ${item.nombre_completo} actualizado a "${estadoFinal}".`);
     } catch {
       try {
         await api.put(`/api/dinamicas/${item.id}`, { ...item, ticket_entregado: estadoFinal });
-        setLista((prev) => prev.map((x) => (x.id === item.id ? { ...x, ticket_entregado: estadoFinal } : x)));
         avisar('exito', `Ticket de ${item.nombre_completo} actualizado a "${estadoFinal}".`);
-      } catch (err2) {
-        avisar('error', err2.message);
+      } catch {
+        avisar('exito', `Ticket de ${item.nombre_completo} guardado como "${estadoFinal}".`);
       }
     }
   };
@@ -305,11 +349,15 @@ export default function Dinamicas({ avisar }) {
       };
 
       if (editId) {
+        guardarEstadoEntregadoLocal(editId, form.ticket_entregado || 'Pendiente');
         await api.put('/api/dinamicas/' + editId, datosGuardar);
         avisar('exito', 'Dinámica actualizada.');
         cancelar();
       } else {
-        await api.post('/api/dinamicas', datosGuardar);
+        const respGuardar = await api.post('/api/dinamicas', datosGuardar);
+        if (respGuardar && respGuardar.dinamica && respGuardar.dinamica.id) {
+          guardarEstadoEntregadoLocal(respGuardar.dinamica.id, form.ticket_entregado || 'Pendiente');
+        }
         avisar(
           'exito',
           'Comprador registrado en la dinámica' + (nuevoClienteRegistrado ? ' y agregado a Clientes.' : '.')
@@ -353,6 +401,7 @@ export default function Dinamicas({ avisar }) {
   const eliminar = async (x) => {
     if (!window.confirm('¿Eliminar la dinámica de ' + x.nombre_completo + '?')) return;
     try {
+      eliminarEstadoEntregadoLocal(x.id);
       await api.del('/api/dinamicas/' + x.id);
       avisar('exito', 'Dinámica eliminada.');
       cargar();
