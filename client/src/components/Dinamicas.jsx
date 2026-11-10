@@ -33,8 +33,14 @@ const guardarEstadoEntregadoLocal = (id, estado) => {
   if (!id) return;
   try {
     const mapa = obtenerEstadosEntregadosLocales();
-    mapa[id] = estado;
+    mapa[String(id)] = estado;
     localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa));
+  } catch {}
+};
+
+const guardarTodosEstadosEntregadosLocales = (mapa) => {
+  try {
+    localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa || {}));
   } catch {}
 };
 
@@ -42,7 +48,7 @@ const eliminarEstadoEntregadoLocal = (id) => {
   if (!id) return;
   try {
     const mapa = obtenerEstadosEntregadosLocales();
-    delete mapa[id];
+    delete mapa[String(id)];
     localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa));
   } catch {}
 };
@@ -73,19 +79,47 @@ export default function Dinamicas({ avisar }) {
 
   const cargar = async () => {
     try {
-      const r = await api.get('/api/dinamicas');
+      // 1. Estados guardados previamente en este dispositivo
       const locales = obtenerEstadosEntregadosLocales();
+
+      // 2. Sincronización bidireccional con la nube:
+      // Si este dispositivo tiene tickets 'Entregado' que la nube no tenía, se suben automáticamente
+      const syncRes = await api.post('/api/dinamicas/sync-estados', { locales }).catch(() => null);
+      const cloud = syncRes?.estados || {};
+
+      // 3. Traer dinámicas completas
+      const r = await api.get('/api/dinamicas');
+      const cloudEstados = { ...cloud, ...(r.cloudEstados || {}) };
+
       const listaMapeada = (r.dinamicas || []).map((x) => {
+        const idStr = String(x.id);
         const estadoDb = x.ticket_entregado;
-        const estadoFinal =
-          estadoDb !== undefined && estadoDb !== null && String(estadoDb).trim()
-            ? String(estadoDb).trim()
-            : (locales[x.id] || 'Pendiente');
+        let estadoFinal = 'Pendiente';
+        if (cloudEstados[idStr]) {
+          estadoFinal = cloudEstados[idStr];
+        } else if (estadoDb && estadoDb !== 'Pendiente') {
+          estadoFinal = estadoDb;
+        } else if (locales[idStr]) {
+          estadoFinal = locales[idStr];
+        } else if (estadoDb) {
+          estadoFinal = estadoDb;
+        }
+
         return {
           ...x,
           ticket_entregado: estadoFinal
         };
       });
+
+      // 4. Actualizar localStorage de este dispositivo con los estados sincronizados
+      const nuevoMapaLocal = {};
+      listaMapeada.forEach((x) => {
+        if (x.ticket_entregado === 'Entregado') {
+          nuevoMapaLocal[String(x.id)] = 'Entregado';
+        }
+      });
+      guardarTodosEstadosEntregadosLocales(nuevoMapaLocal);
+
       setLista(listaMapeada);
       setFaltaTabla(false);
     } catch (err) {
@@ -140,6 +174,18 @@ export default function Dinamicas({ avisar }) {
     cargar();
     cargarValores();
     cargarClientes();
+
+    const alVolver = () => {
+      if (document.visibilityState === 'visible') {
+        cargar();
+      }
+    };
+    window.addEventListener('focus', alVolver);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.removeEventListener('focus', alVolver);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
   }, []);
   useEffect(() => { setPagina(1); }, [lista, busquedaTicket, busquedaCelular, modoBusqueda]);
 
@@ -277,11 +323,13 @@ export default function Dinamicas({ avisar }) {
     const estadoActual = item.ticket_entregado || 'Pendiente';
     const estadoFinal = nuevoEstado || (estadoActual === 'Entregado' ? 'Pendiente' : 'Entregado');
 
-    // 1. Persistencia local inmediata (a prueba de recargas de página)
-    guardarEstadoEntregadoLocal(item.id, estadoFinal);
+    // 1. Actualización visual inmediata en la tabla y ruleta
     setLista((prev) => prev.map((x) => (x.id === item.id ? { ...x, ticket_entregado: estadoFinal } : x)));
 
-    // 2. Persistencia en Supabase
+    // 2. Persistencia en localStorage local
+    guardarEstadoEntregadoLocal(item.id, estadoFinal);
+
+    // 3. Persistencia en la nube (para que se refleje inmediatamente en cualquier celular o PC)
     try {
       await api.post(`/api/dinamicas/${item.id}/estado`, { ticket_entregado: estadoFinal });
       avisar('exito', `Ticket de ${item.nombre_completo} actualizado a "${estadoFinal}".`);

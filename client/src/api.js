@@ -413,11 +413,28 @@ async function route(method, rawPath, body) {
   let cacheEstadosCloud = null;
   let ultimoFetchCloud = 0;
 
-  async function obtenerEstadosEntregadosCloud() {
+  async function obtenerEstadosEntregadosCloud(forzar = false) {
     const ahora = Date.now();
-    if (cacheEstadosCloud && ahora - ultimoFetchCloud < 3000) {
+    if (!forzar && cacheEstadosCloud && ahora - ultimoFetchCloud < 2000) {
       return cacheEstadosCloud;
     }
+    // 1. Fetch directo al archivo público con timestamp para romper caché de Cloudflare / Navegador
+    try {
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/fotos/tickets_entregados.json?t=${ahora}`;
+      const res = await fetch(publicUrl, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && typeof json === 'object') {
+          cacheEstadosCloud = json;
+          ultimoFetchCloud = ahora;
+          return cacheEstadosCloud;
+        }
+      }
+    } catch {
+      // Ignorar y pasar al cliente de Supabase
+    }
+
+    // 2. Fallback usando el cliente oficial de Supabase
     try {
       const { data, error } = await supabase.storage.from('fotos').download('tickets_entregados.json');
       if (!error && data) {
@@ -435,48 +452,96 @@ async function route(method, rawPath, body) {
   async function guardarEstadoEntregadoCloud(id, estado) {
     if (!id) return;
     try {
-      const actuales = await obtenerEstadosEntregadosCloud();
+      const actuales = await obtenerEstadosEntregadosCloud(true);
       actuales[String(id)] = estado;
       cacheEstadosCloud = actuales;
       ultimoFetchCloud = Date.now();
       const blob = new Blob([JSON.stringify(actuales)], { type: 'application/json' });
-      await supabase.storage.from('fotos').upload('tickets_entregados.json', blob, { upsert: true });
+      await supabase.storage.from('fotos').upload('tickets_entregados.json', blob, {
+        upsert: true,
+        cacheControl: '0',
+        contentType: 'application/json'
+      });
     } catch (e) {
       console.warn('Guardando tickets_entregados.json en la nube:', e);
+    }
+  }
+
+  async function sincronizarEstadosEntregadosCloud(mapaLocal = {}) {
+    try {
+      const actuales = await obtenerEstadosEntregadosCloud(true);
+      let huboCambios = false;
+      // Si este dispositivo tiene tickets marcados como 'Entregado' que en la nube aún no están registrados,
+      // subirlos para que se propaguen inmediatamente a celulares y demás dispositivos.
+      if (mapaLocal && typeof mapaLocal === 'object') {
+        for (const [k, v] of Object.entries(mapaLocal)) {
+          if (v === 'Entregado' && actuales[String(k)] === undefined) {
+            actuales[String(k)] = 'Entregado';
+            huboCambios = true;
+          }
+        }
+      }
+      if (huboCambios) {
+        cacheEstadosCloud = actuales;
+        ultimoFetchCloud = Date.now();
+        const blob = new Blob([JSON.stringify(actuales)], { type: 'application/json' });
+        await supabase.storage.from('fotos').upload('tickets_entregados.json', blob, {
+          upsert: true,
+          cacheControl: '0',
+          contentType: 'application/json'
+        });
+      }
+      return actuales;
+    } catch (e) {
+      console.warn('Sincronizando estados en la nube:', e);
+      return cacheEstadosCloud || mapaLocal || {};
     }
   }
 
   async function eliminarEstadoEntregadoCloud(id) {
     if (!id) return;
     try {
-      const actuales = await obtenerEstadosEntregadosCloud();
+      const actuales = await obtenerEstadosEntregadosCloud(true);
       delete actuales[String(id)];
       cacheEstadosCloud = actuales;
       ultimoFetchCloud = Date.now();
       const blob = new Blob([JSON.stringify(actuales)], { type: 'application/json' });
-      await supabase.storage.from('fotos').upload('tickets_entregados.json', blob, { upsert: true });
+      await supabase.storage.from('fotos').upload('tickets_entregados.json', blob, {
+        upsert: true,
+        cacheControl: '0',
+        contentType: 'application/json'
+      });
     } catch (e) {
       console.warn('Eliminando de tickets_entregados.json en la nube:', e);
     }
+  }
+
+  if (method === 'POST' && path === '/api/dinamicas/sync-estados') {
+    const { locales } = body || {};
+    const estados = await sincronizarEstadosEntregadosCloud(locales);
+    return { ok: true, estados };
   }
 
   if (method === 'GET' && path === '/api/dinamicas') {
     const data = await traerTodas(() =>
       supabase.from('dinamicas').select('*').order('created_at', { ascending: false })
     );
-    const cloudEstados = await obtenerEstadosEntregadosCloud();
+    const cloudEstados = await obtenerEstadosEntregadosCloud(true);
     const dinamicasMapeadas = (data || []).map((d) => {
+      const idStr = String(d.id);
       const estadoDb = d.ticket_entregado;
-      const estadoFinal =
-        estadoDb !== undefined && estadoDb !== null && String(estadoDb).trim()
-          ? String(estadoDb).trim()
-          : (cloudEstados[String(d.id)] || 'Pendiente');
+      let estadoFinal = 'Pendiente';
+      if (cloudEstados[idStr]) {
+        estadoFinal = cloudEstados[idStr];
+      } else if (estadoDb && String(estadoDb).trim()) {
+        estadoFinal = String(estadoDb).trim();
+      }
       return {
         ...d,
         ticket_entregado: estadoFinal
       };
     });
-    return { dinamicas: dinamicasMapeadas };
+    return { dinamicas: dinamicasMapeadas, cloudEstados };
   }
   if (method === 'GET' && path === '/api/dinamicas/siguiente') {
     const dinamica = (q.get('dinamica') || '').trim();
@@ -535,12 +600,12 @@ async function route(method, rawPath, body) {
     // Persistir en la nube para sincronización universal (todos los celulares, PCs y usuarios)
     await guardarEstadoEntregadoCloud(m[1], nuevoEstado);
 
-    let { data, error } = await supabase.from('dinamicas').update({ ticket_entregado: nuevoEstado }).eq('id', m[1]).select();
-    if (error && error.message && error.message.includes('ticket_entregado')) {
-      return { ok: true, dinamica: { id: m[1], ticket_entregado: nuevoEstado } };
+    try {
+      await supabase.from('dinamicas').update({ ticket_entregado: nuevoEstado }).eq('id', m[1]);
+    } catch {
+      // Si la columna aún no fue creada en PostgreSQL, se ignora silenciosamente
     }
-    if (error) throw new Error(error.message);
-    return { ok: true, dinamica: data && data[0] };
+    return { ok: true, dinamica: { id: m[1], ticket_entregado: nuevoEstado } };
   }
   if ((m = path.match(/^\/api\/dinamicas\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
     if (method === 'DELETE') {
