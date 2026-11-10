@@ -397,11 +397,75 @@ async function route(method, rawPath, body) {
   }
 
   // ----- Dinámicas -----
+  // Sincronización en la nube para estados de tickets de dinámicas
+  // (Permite que el estado "Entregado" persista en la nube para cualquier celular, PC y usuario)
+  let cacheEstadosCloud = null;
+  let ultimoFetchCloud = 0;
+
+  async function obtenerEstadosEntregadosCloud() {
+    const ahora = Date.now();
+    if (cacheEstadosCloud && ahora - ultimoFetchCloud < 3000) {
+      return cacheEstadosCloud;
+    }
+    try {
+      const { data, error } = await supabase.storage.from('fotos').download('tickets_entregados.json');
+      if (!error && data) {
+        const texto = await data.text();
+        cacheEstadosCloud = JSON.parse(texto || '{}');
+        ultimoFetchCloud = ahora;
+        return cacheEstadosCloud;
+      }
+    } catch (e) {
+      console.warn('Leyendo tickets_entregados.json de la nube:', e);
+    }
+    return cacheEstadosCloud || {};
+  }
+
+  async function guardarEstadoEntregadoCloud(id, estado) {
+    if (!id) return;
+    try {
+      const actuales = await obtenerEstadosEntregadosCloud();
+      actuales[String(id)] = estado;
+      cacheEstadosCloud = actuales;
+      ultimoFetchCloud = Date.now();
+      const blob = new Blob([JSON.stringify(actuales)], { type: 'application/json' });
+      await supabase.storage.from('fotos').upload('tickets_entregados.json', blob, { upsert: true });
+    } catch (e) {
+      console.warn('Guardando tickets_entregados.json en la nube:', e);
+    }
+  }
+
+  async function eliminarEstadoEntregadoCloud(id) {
+    if (!id) return;
+    try {
+      const actuales = await obtenerEstadosEntregadosCloud();
+      delete actuales[String(id)];
+      cacheEstadosCloud = actuales;
+      ultimoFetchCloud = Date.now();
+      const blob = new Blob([JSON.stringify(actuales)], { type: 'application/json' });
+      await supabase.storage.from('fotos').upload('tickets_entregados.json', blob, { upsert: true });
+    } catch (e) {
+      console.warn('Eliminando de tickets_entregados.json en la nube:', e);
+    }
+  }
+
   if (method === 'GET' && path === '/api/dinamicas') {
     const data = await traerTodas(() =>
       supabase.from('dinamicas').select('*').order('created_at', { ascending: false })
     );
-    return { dinamicas: data || [] };
+    const cloudEstados = await obtenerEstadosEntregadosCloud();
+    const dinamicasMapeadas = (data || []).map((d) => {
+      const estadoDb = d.ticket_entregado;
+      const estadoFinal =
+        estadoDb !== undefined && estadoDb !== null && String(estadoDb).trim()
+          ? String(estadoDb).trim()
+          : (cloudEstados[String(d.id)] || 'Pendiente');
+      return {
+        ...d,
+        ticket_entregado: estadoFinal
+      };
+    });
+    return { dinamicas: dinamicasMapeadas };
   }
   if (method === 'GET' && path === '/api/dinamicas/siguiente') {
     const dinamica = (q.get('dinamica') || '').trim();
@@ -450,20 +514,26 @@ async function route(method, rawPath, body) {
       error = reintento.error;
     }
     if (error) throw new Error(error.message);
+    if (data && data.id && ticket_entregado) {
+      await guardarEstadoEntregadoCloud(data.id, String(ticket_entregado).trim());
+    }
     return { ok: true, dinamica: data };
   }
   if ((m = path.match(/^\/api\/dinamicas\/([^/]+)\/estado$/)) && (method === 'POST' || method === 'PATCH')) {
     const nuevoEstado = body && body.ticket_entregado ? String(body.ticket_entregado).trim() : 'Entregado';
+    // Persistir en la nube para sincronización universal (todos los celulares, PCs y usuarios)
+    await guardarEstadoEntregadoCloud(m[1], nuevoEstado);
+
     let { data, error } = await supabase.from('dinamicas').update({ ticket_entregado: nuevoEstado }).eq('id', m[1]).select();
     if (error && error.message && error.message.includes('ticket_entregado')) {
-      console.warn('Columna ticket_entregado no existe aún en Supabase dinamicas:', error.message);
-      return { ok: true, dinamica: { id: m[1], ticket_entregado: nuevoEstado }, sinColumna: true };
+      return { ok: true, dinamica: { id: m[1], ticket_entregado: nuevoEstado } };
     }
     if (error) throw new Error(error.message);
     return { ok: true, dinamica: data && data[0] };
   }
   if ((m = path.match(/^\/api\/dinamicas\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
     if (method === 'DELETE') {
+      await eliminarEstadoEntregadoCloud(m[1]);
       const { data, error } = await supabase.from('dinamicas').delete().eq('id', m[1]).select();
       if (error) throw new Error(error.message);
       if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
@@ -487,6 +557,9 @@ async function route(method, rawPath, body) {
       numero_hasta: numero_hasta !== undefined && numero_hasta !== null && numero_hasta !== '' ? parseInt(numero_hasta, 10) : null,
       ticket_entregado: ticket_entregado ? String(ticket_entregado).trim() : 'Pendiente'
     };
+    if (ticket_entregado) {
+      await guardarEstadoEntregadoCloud(m[1], String(ticket_entregado).trim());
+    }
     let { data, error } = await supabase.from('dinamicas').update(payload).eq('id', m[1]).select();
     if (error && error.message && error.message.includes('ticket_entregado')) {
       delete payload.ticket_entregado;
