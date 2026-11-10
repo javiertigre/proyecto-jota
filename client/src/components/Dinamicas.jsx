@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { generarExcel } from '../excel.js';
 import Paginacion from './Paginacion.jsx';
 import ValoresDinamica from './ValoresDinamica.jsx';
+import CirculoColores from './CirculoColores.jsx';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 const vacio = {
@@ -62,6 +63,7 @@ export default function Dinamicas({ avisar }) {
   const [editId, setEditId] = useState(null);
   const [faltaTabla, setFaltaTabla] = useState(false);
   const [verValores, setVerValores] = useState(false);
+  const [verRuleta, setVerRuleta] = useState(false);
   const [modoBusqueda, setModoBusqueda] = useState('ticket'); // 'ticket' | 'celular'
   const [busquedaTicket, setBusquedaTicket] = useState('');
   const [busquedaCelular, setBusquedaCelular] = useState('');
@@ -1011,9 +1013,32 @@ export default function Dinamicas({ avisar }) {
     <>
       <div className="card">
         <h2>🎯 {editId ? 'Editar dinámica' : 'Dinámicas'}</h2>
-        <div style={{ marginBottom: 15 }}>
+        <div style={{ marginBottom: 15, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={() => setVerValores(!verValores)}>
             {verValores ? '▲ Ocultar valores de dinámicas' : '🏷️ Crear / administrar diferentes dinámicas'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setVerRuleta(true)}
+            disabled={lista.length === 0}
+            style={{
+              background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 50%, #3b82f6 100%)',
+              color: '#ffffff',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: lista.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: lista.length === 0 ? 0.6 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 8px rgba(139, 92, 246, 0.35)'
+            }}
+            title="Generar ruleta de colores con todos los números registrados en la dinámica seleccionada"
+          >
+            🎡 Círculo de Colores
           </button>
         </div>
         {faltaTabla ? (
@@ -1130,6 +1155,29 @@ export default function Dinamicas({ avisar }) {
                 title="Imprimir boletos para recortar (solo boletos en estado Pendiente)"
               >
                 📄 Boletos PDF (Solo Pendientes)
+              </button>
+              <button
+                type="button"
+                onClick={() => setVerRuleta(true)}
+                disabled={lista.length === 0}
+                style={{
+                  background: 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 50%, #3b82f6 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '7px 16px',
+                  borderRadius: '6px',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: lista.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: lista.length === 0 ? 0.6 : 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 8px rgba(139, 92, 246, 0.35)'
+                }}
+                title="Generar ruleta de colores con todos los números registrados en la dinámica seleccionada"
+              >
+                🎡 Círculo de Colores
               </button>
             </div>
           </div>
@@ -1602,6 +1650,17 @@ export default function Dinamicas({ avisar }) {
           )}
           <Paginacion total={visibles.length} pagina={pagina} setPagina={setPagina} porPagina={POR_PAGINA} />
         </div>
+      )}
+
+      {verRuleta && (
+        <CirculoColores
+          onCerrar={() => setVerRuleta(false)}
+          dinamicaInicial={form.dinamica_nombre || dinamicaSel}
+          listaDinamicas={lista}
+          valoresDinamicas={valores}
+          desglosarTickets={desglosarTickets}
+          onCambiarEstadoTicket={cambiarEstadoTicket}
+        />
       )}
     </>
   );
