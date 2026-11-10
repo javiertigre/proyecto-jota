@@ -27,7 +27,23 @@ export default function CirculoColores({
   const [busqueda, setBusqueda] = useState('');
   const [girando, setGirando] = useState(false);
   const [ganador, setGanador] = useState(null);
+  const [mostrarModalGanador, setMostrarModalGanador] = useState(false);
   const [historialGanadores, setHistorialGanadores] = useState([]);
+
+  // Detectar ancho de pantalla para diseño 100% responsivo en celulares
+  const [anchoPantalla, setAnchoPantalla] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 500
+  );
+
+  useEffect(() => {
+    const alRedimensionar = () => setAnchoPantalla(window.innerWidth);
+    window.addEventListener('resize', alRedimensionar);
+    return () => window.removeEventListener('resize', alRedimensionar);
+  }, []);
+
+  const esMovil = anchoPantalla < 768;
+  // Diámetro dinámico para que en celulares nunca se corte ni desborde
+  const diametroRuleta = Math.min(430, Math.max(260, esMovil ? anchoPantalla - 48 : 420));
 
   // Referencias para animación y canvas
   const canvasRef = useRef(null);
@@ -40,7 +56,9 @@ export default function CirculoColores({
   const tickets = useMemo(() => {
     let items = listaDinamicas || [];
     if (dinamicaSel) {
-      items = items.filter((x) => String(x.dinamica_nombre || '').trim().toLowerCase() === String(dinamicaSel).trim().toLowerCase());
+      items = items.filter((x) =>
+        String(x.dinamica_nombre || '').trim().toLowerCase() === String(dinamicaSel).trim().toLowerCase()
+      );
     }
     if (soloPendientes) {
       items = items.filter((x) => (x.ticket_entregado || 'Pendiente') !== 'Entregado');
@@ -83,7 +101,7 @@ export default function CirculoColores({
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.04);
-    } catch { }
+    } catch {}
   };
 
   const reproducirFanfarria = () => {
@@ -104,17 +122,17 @@ export default function CirculoColores({
         osc.type = 'sine';
         const tiempoInicio = ctx.currentTime + i * 0.11;
         osc.frequency.setValueAtTime(freq, tiempoInicio);
-        gain.gain.setValueAtTime(0.2, tiempoInicio);
-        gain.gain.exponentialRampToValueAtTime(0.001, tiempoInicio + 0.4);
+        gain.gain.setValueAtTime(0.25, tiempoInicio);
+        gain.gain.exponentialRampToValueAtTime(0.001, tiempoInicio + 0.45);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(tiempoInicio);
-        osc.stop(tiempoInicio + 0.45);
+        osc.stop(tiempoInicio + 0.5);
       });
-    } catch { }
+    } catch {}
   };
 
-  // Función para dibujar la ruleta en el Canvas
+  // Función para dibujar la ruleta en el Canvas (escala dinámica con diametroRuleta)
   const dibujarRuleta = (anguloActual) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -125,7 +143,8 @@ export default function CirculoColores({
     const alto = canvas.height;
     const cx = ancho / 2;
     const cy = alto / 2;
-    const radio = Math.min(cx, cy) - 24;
+    const margenExterior = esMovil ? 16 : 22;
+    const radio = Math.min(cx, cy) - margenExterior;
 
     ctx.clearRect(0, 0, ancho, alto);
 
@@ -135,17 +154,17 @@ export default function CirculoColores({
       ctx.beginPath();
       ctx.arc(cx, cy, radio, 0, 2 * Math.PI);
       ctx.fill();
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 3;
       ctx.strokeStyle = '#cbd5e1';
       ctx.stroke();
 
       ctx.fillStyle = '#64748b';
-      ctx.font = 'bold 16px sans-serif';
+      ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('Sin números registrados', cx, cy - 10);
-      ctx.font = '13px sans-serif';
-      ctx.fillText('en esta dinámica', cx, cy + 14);
+      ctx.fillText('Sin números registrados', cx, cy - 8);
+      ctx.font = '12px sans-serif';
+      ctx.fillText('en esta dinámica', cx, cy + 12);
       return;
     }
 
@@ -153,19 +172,19 @@ export default function CirculoColores({
 
     // Sombra exterior de la ruleta
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 6;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+    ctx.shadowBlur = esMovil ? 12 : 18;
+    ctx.shadowOffsetY = 4;
     ctx.beginPath();
-    ctx.arc(cx, cy, radio + 10, 0, 2 * Math.PI);
-    ctx.fillStyle = '#1e293b';
+    ctx.arc(cx, cy, radio + 8, 0, 2 * Math.PI);
+    ctx.fillStyle = '#0f172a';
     ctx.fill();
     ctx.restore();
 
     // Aro exterior decorativo dorado
     ctx.beginPath();
-    ctx.arc(cx, cy, radio + 10, 0, 2 * Math.PI);
-    ctx.lineWidth = 8;
+    ctx.arc(cx, cy, radio + 8, 0, 2 * Math.PI);
+    ctx.lineWidth = esMovil ? 6 : 8;
     ctx.strokeStyle = '#f59e0b';
     ctx.stroke();
 
@@ -184,7 +203,7 @@ export default function CirculoColores({
       ctx.fill();
 
       // Borde del sector
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.5;
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
 
@@ -199,81 +218,86 @@ export default function CirculoColores({
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
 
-      // Ajustar tamaño de fuente según cantidad de sectores
-      let tamFuente = 16;
-      if (totalTickets > 60) tamFuente = 10;
-      else if (totalTickets > 40) tamFuente = 12;
-      else if (totalTickets > 25) tamFuente = 14;
+      // Ajustar tamaño de fuente según cantidad de sectores y resolución móvil
+      const factorEscala = radio / 190;
+      let tamFuente = Math.round(15 * factorEscala);
+      if (totalTickets > 60) tamFuente = Math.round(9 * factorEscala);
+      else if (totalTickets > 40) tamFuente = Math.round(11 * factorEscala);
+      else if (totalTickets > 25) tamFuente = Math.round(13 * factorEscala);
 
-      ctx.font = `bold ${tamFuente}px "Segoe UI", Roboto, sans-serif`;
+      ctx.font = `bold ${Math.max(8, tamFuente)}px "Segoe UI", Roboto, sans-serif`;
 
       // Sombra para contraste del texto
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-      ctx.shadowBlur = 4;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+      ctx.shadowBlur = 3;
       ctx.fillStyle = '#ffffff';
 
       const textoNum = '#' + (ticket.numero != null ? ticket.numero : ticket.numeroTexto);
       ctx.fillText(textoNum, distTexto, 0);
 
       // Si hay espacio y pocos sectores, mostrar nombre abreviado
-      if (totalTickets <= 18) {
+      if (totalTickets <= 16 && !esMovil) {
         ctx.font = '9px sans-serif';
         ctx.fillStyle = '#fef08a';
         const primerNombre = String(ticket.cliente || '').split(/\s+/)[0] || '';
-        const nombreCorto = primerNombre.length > 9 ? primerNombre.slice(0, 8) + '…' : primerNombre;
-        ctx.fillText(nombreCorto, distTexto - 30, 0);
+        const nombreCorto = primerNombre.length > 8 ? primerNombre.slice(0, 7) + '…' : primerNombre;
+        ctx.fillText(nombreCorto, distTexto - 26, 0);
       }
 
       ctx.restore();
     }
 
     // Luces/remaches decorativos alrededor del aro exterior
-    const numLuces = Math.min(36, Math.max(16, totalTickets));
+    const numLuces = Math.min(32, Math.max(14, totalTickets));
     for (let l = 0; l < numLuces; l++) {
       const angLuz = (l * 2 * Math.PI) / numLuces;
-      const lx = cx + Math.cos(angLuz) * (radio + 5);
-      const ly = cy + Math.sin(angLuz) * (radio + 5);
+      const lx = cx + Math.cos(angLuz) * (radio + 4);
+      const ly = cy + Math.sin(angLuz) * (radio + 4);
       ctx.beginPath();
-      ctx.arc(lx, ly, 3, 0, 2 * Math.PI);
+      ctx.arc(lx, ly, esMovil ? 2.5 : 3, 0, 2 * Math.PI);
       ctx.fillStyle = l % 2 === 0 ? '#fef08a' : '#ffffff';
       ctx.fill();
     }
 
     // Centro de la ruleta (buje metálico)
+    const radioBuje = Math.max(22, Math.round(radio * 0.16));
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+    ctx.shadowBlur = 6;
     ctx.beginPath();
-    ctx.arc(cx, cy, 32, 0, 2 * Math.PI);
-    ctx.fillStyle = '#1e293b';
+    ctx.arc(cx, cy, radioBuje, 0, 2 * Math.PI);
+    ctx.fillStyle = '#0f172a';
     ctx.fill();
     ctx.restore();
 
     ctx.beginPath();
-    ctx.arc(cx, cy, 32, 0, 2 * Math.PI);
-    ctx.lineWidth = 4;
+    ctx.arc(cx, cy, radioBuje, 0, 2 * Math.PI);
+    ctx.lineWidth = 3;
     ctx.strokeStyle = '#f59e0b';
     ctx.stroke();
 
     // Ícono en el centro
     ctx.fillStyle = '#ffffff';
-    ctx.font = '22px sans-serif';
+    ctx.font = `${Math.round(radioBuje * 0.85)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🎯', cx, cy);
 
     // Flecha indicadora superior (apunta hacia abajo, al sector ganador)
-    const puntaY = cy - radio + 10;
-    const baseFlechaY = puntaY - 26;
+    const puntaY = cy - radio + (esMovil ? 8 : 10);
+    const tamFlecha = esMovil ? 20 : 26;
+    const baseFlechaY = puntaY - tamFlecha;
+    const anchoFlechaMitad = esMovil ? 11 : 14;
+
     ctx.save();
     ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 6;
     ctx.shadowOffsetY = 3;
 
     ctx.beginPath();
     ctx.moveTo(cx, puntaY);
-    ctx.lineTo(cx - 15, baseFlechaY);
-    ctx.lineTo(cx + 15, baseFlechaY);
+    ctx.lineTo(cx - anchoFlechaMitad, baseFlechaY);
+    ctx.lineTo(cx + anchoFlechaMitad, baseFlechaY);
     ctx.closePath();
     ctx.fillStyle = '#ef4444';
     ctx.fill();
@@ -283,17 +307,17 @@ export default function CirculoColores({
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(cx, baseFlechaY - 2, 7, 0, 2 * Math.PI);
+    ctx.arc(cx, baseFlechaY - 2, esMovil ? 5 : 7, 0, 2 * Math.PI);
     ctx.fillStyle = '#dc2626';
     ctx.fill();
     ctx.stroke();
     ctx.restore();
   };
 
-  // Redibujar cuando cambian los tickets
+  // Redibujar cuando cambian los tickets o el tamaño
   useEffect(() => {
     dibujarRuleta(anguloRef.current);
-  }, [tickets]);
+  }, [tickets, diametroRuleta]);
 
   // Limpiar animación al desmontar
   useEffect(() => {
@@ -306,7 +330,6 @@ export default function CirculoColores({
   const obtenerIndiceBajoFlecha = (angulo) => {
     if (totalTickets === 0) return -1;
     const arcoSector = (2 * Math.PI) / totalTickets;
-    // La flecha está arriba en 3 * PI / 2 (equivalente a -PI / 2)
     const anguloFlecha = (3 * Math.PI) / 2;
     let relativo = (anguloFlecha - angulo) % (2 * Math.PI);
     if (relativo < 0) relativo += 2 * Math.PI;
@@ -320,8 +343,9 @@ export default function CirculoColores({
 
     setGirando(true);
     setGanador(null);
+    setMostrarModalGanador(false);
 
-    const duracion = 5500; // 5.5 segundos de rotación
+    const duracion = 5400; // 5.4 segundos de rotación
     const vueltasCompletas = 6 + Math.floor(Math.random() * 4); // entre 6 y 9 vueltas
     const anguloAleatorio = Math.random() * (2 * Math.PI);
     const anguloInicial = anguloRef.current % (2 * Math.PI);
@@ -342,7 +366,7 @@ export default function CirculoColores({
       anguloRef.current = anguloActual;
       dibujarRuleta(anguloActual);
 
-      // Reproducir sonido de tick cuando cambia de sector
+      // Sonido de tick al pasar por cada sector
       const sectorActual = obtenerIndiceBajoFlecha(anguloActual);
       if (sectorActual !== ultimoSectorTickRef.current) {
         ultimoSectorTickRef.current = sectorActual;
@@ -352,7 +376,7 @@ export default function CirculoColores({
       if (progreso < 1) {
         animacionRef.current = requestAnimationFrame(frame);
       } else {
-        // Giro completado: determinar ganador exacto
+        // Giro completado: proclamar ganador
         setGirando(false);
         const indiceGanador = obtenerIndiceBajoFlecha(anguloActual);
         const elegido = tickets[indiceGanador];
@@ -363,6 +387,8 @@ export default function CirculoColores({
             ...prev
           ]);
           reproducirFanfarria();
+          // MOSTRAR POPUP/MODAL CELEBRATORIO DE GANADOR INMEDIATAMENTE
+          setMostrarModalGanador(true);
         }
       }
     };
@@ -387,13 +413,13 @@ export default function CirculoColores({
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(15, 23, 42, 0.75)',
-        backdropFilter: 'blur(4px)',
+        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+        backdropFilter: 'blur(5px)',
         zIndex: 99999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
+        padding: esMovil ? '6px' : '16px',
         overflowY: 'auto'
       }}
       onClick={(e) => {
@@ -403,36 +429,66 @@ export default function CirculoColores({
       <div
         style={{
           background: '#ffffff',
-          borderRadius: '16px',
+          borderRadius: esMovil ? '12px' : '16px',
           width: '100%',
-          maxWidth: '1020px',
-          maxHeight: '92vh',
+          maxWidth: '1040px',
+          maxHeight: '94vh',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
           overflow: 'hidden',
-          animation: 'fadeIn 0.2s ease-out'
+          position: 'relative'
         }}
       >
-        {/* Cabecera del modal */}
+        {/* Marca de agua de fondo con el logotipo en todo el modal */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundImage: 'url(/JC.jpeg)',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: esMovil ? '260px' : '420px',
+            opacity: 0.05,
+            pointerEvents: 'none',
+            zIndex: 0
+          }}
+        />
+
+        {/* Cabecera del modal con Logotipo */}
         <div
           style={{
             background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
             color: '#ffffff',
-            padding: '16px 22px',
+            padding: esMovil ? '10px 14px' : '14px 22px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: '3px solid #f59e0b'
+            borderBottom: '3px solid #f59e0b',
+            flexShrink: 0,
+            position: 'relative',
+            zIndex: 2
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: '28px' }}>🎡</span>
+            <img
+              src="/JC.jpeg"
+              alt="Logotipo JC"
+              style={{
+                width: esMovil ? '36px' : '46px',
+                height: esMovil ? '36px' : '46px',
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: '2px solid #f59e0b',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                flexShrink: 0
+              }}
+            />
             <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.5px' }}>
-                Círculo de Colores — CAPRIJOTA
+              <h2 style={{ margin: 0, fontSize: esMovil ? '16px' : '20px', fontWeight: 800 }}>
+                Círculo de Colores — JC Capricornio
               </h2>
-              <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1' }}>
+              <p style={{ margin: 0, fontSize: esMovil ? '11px' : '12px', color: '#cbd5e1' }}>
                 Sorteo oficial e interactivo con los números registrados
               </p>
             </div>
@@ -443,13 +499,17 @@ export default function CirculoColores({
             onClick={onCerrar}
             disabled={girando}
             style={{
-              background: 'transparent',
+              background: '#334155',
               border: 'none',
               color: '#ffffff',
-              fontSize: '24px',
+              fontSize: '18px',
               cursor: girando ? 'not-allowed' : 'pointer',
-              padding: '4px 8px',
-              borderRadius: '6px',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               lineHeight: 1
             }}
             title="Cerrar ventana"
@@ -463,15 +523,16 @@ export default function CirculoColores({
           style={{
             background: '#f8fafc',
             borderBottom: '1px solid #e2e8f0',
-            padding: '12px 20px',
+            padding: esMovil ? '10px 12px' : '12px 20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: 12
+            gap: 10,
+            flexShrink: 0
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: esMovil ? '100%' : 'auto' }}>
             <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
               🎯 Dinámica:
             </label>
@@ -480,17 +541,19 @@ export default function CirculoColores({
               onChange={(e) => {
                 setDinamicaSel(e.target.value);
                 setGanador(null);
+                setMostrarModalGanador(false);
               }}
               disabled={girando}
               style={{
-                padding: '7px 12px',
+                padding: '6px 10px',
                 borderRadius: '8px',
                 border: '1.5px solid #cbd5e1',
                 fontSize: '13px',
                 fontWeight: 600,
                 background: '#ffffff',
                 color: '#0f172a',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                flex: esMovil ? 1 : 'none'
               }}
             >
               <option value="">-- Todas las Dinámicas --</option>
@@ -500,16 +563,17 @@ export default function CirculoColores({
                 </option>
               ))}
             </select>
+          </div>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: esMovil ? '100%' : 'auto', justifyContent: 'space-between' }}>
             <label
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: 600,
                 color: '#475569',
-                marginLeft: 12,
                 cursor: 'pointer'
               }}
             >
@@ -519,36 +583,38 @@ export default function CirculoColores({
                 onChange={(e) => {
                   setSoloPendientes(e.target.checked);
                   setGanador(null);
+                  setMostrarModalGanador(false);
                 }}
                 disabled={girando}
-                style={{ width: 16, height: 16, cursor: 'pointer' }}
+                style={{ width: 15, height: 15, cursor: 'pointer' }}
               />
-              Solo boletos en estado ⏳ Pendiente
+              Solo boletos ⏳ Pendientes
             </label>
-          </div>
 
-          <div
-            style={{
-              fontSize: '13px',
-              fontWeight: 700,
-              color: '#047857',
-              background: '#d1fae5',
-              padding: '6px 14px',
-              borderRadius: '20px',
-              border: '1px solid #a7f3d0'
-            }}
-          >
-            🎟️ {totalTickets} números participantes en el Circulo de Colores
+            <div
+              style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                color: '#047857',
+                background: '#d1fae5',
+                padding: '4px 10px',
+                borderRadius: '16px',
+                border: '1px solid #a7f3d0'
+              }}
+            >
+              🎟️ {totalTickets} en la ruleta
+            </div>
           </div>
         </div>
 
         {/* Cuerpo principal con Ruleta + Panel de Ganador y Participantes */}
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(340px, 490px) 1fr',
-            gap: 20,
-            padding: '20px',
+            display: esMovil ? 'flex' : 'grid',
+            flexDirection: esMovil ? 'column' : 'initial',
+            gridTemplateColumns: esMovil ? 'none' : 'minmax(320px, 450px) 1fr',
+            gap: esMovil ? 14 : 20,
+            padding: esMovil ? '12px' : '20px',
             overflowY: 'auto',
             alignItems: 'start'
           }}
@@ -560,16 +626,27 @@ export default function CirculoColores({
               flexDirection: 'column',
               alignItems: 'center',
               background: '#f8fafc',
-              padding: '16px',
+              padding: esMovil ? '10px' : '16px',
               borderRadius: '12px',
-              border: '1px solid #e2e8f0'
+              border: '1px solid #e2e8f0',
+              width: '100%',
+              boxSizing: 'border-box'
             }}
           >
-            <div style={{ position: 'relative', width: 440, height: 440, maxWidth: '100%' }}>
+            {/* Contenedor del Canvas perfectamente centrado y responsivo */}
+            <div
+              style={{
+                position: 'relative',
+                width: diametroRuleta,
+                height: diametroRuleta,
+                maxWidth: '100%',
+                margin: '0 auto'
+              }}
+            >
               <canvas
                 ref={canvasRef}
-                width={440}
-                height={440}
+                width={diametroRuleta}
+                height={diametroRuleta}
                 style={{
                   width: '100%',
                   height: '100%',
@@ -577,6 +654,31 @@ export default function CirculoColores({
                   borderRadius: '50%'
                 }}
               />
+
+              {/* Logotipo circular en el centro de la ruleta */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: Math.max(46, Math.round(diametroRuleta * 0.17)),
+                  height: Math.max(46, Math.round(diametroRuleta * 0.17)),
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  border: '3px solid #f59e0b',
+                  boxShadow: '0 3px 10px rgba(0,0,0,0.45)',
+                  pointerEvents: 'none',
+                  zIndex: 3,
+                  background: '#0f172a'
+                }}
+              >
+                <img
+                  src="/JC.jpeg"
+                  alt="Logo Central"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+              </div>
             </div>
 
             {/* Botón principal para girar */}
@@ -585,11 +687,11 @@ export default function CirculoColores({
               onClick={girar}
               disabled={girando || totalTickets === 0}
               style={{
-                marginTop: 16,
+                marginTop: 14,
                 width: '100%',
-                maxWidth: '360px',
-                padding: '14px 20px',
-                fontSize: '16px',
+                maxWidth: '380px',
+                padding: esMovil ? '12px 16px' : '14px 20px',
+                fontSize: esMovil ? '15px' : '16px',
                 fontWeight: 800,
                 color: '#ffffff',
                 background: girando
@@ -609,15 +711,15 @@ export default function CirculoColores({
             >
               <span style={{ fontSize: '20px' }}>{girando ? '⏳' : '🎲'}</span>
               {girando
-                ? '¡GIRANDO EL CIRCULO DE COLORES...!'
+                ? '¡GIRANDO EL CÍRCULO...!'
                 : totalTickets === 0
-                  ? 'No hay números para girar'
-                  : '¡GIRAR EL CIRCULO DE COLORES!'}
+                ? 'No hay números para girar'
+                : '¡GIRAR RULETA DE COLORES!'}
             </button>
           </div>
 
           {/* COLUMNA DERECHA: TARJETA DE GANADOR Y LISTA DE PARTICIPANTES */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
             {/* Tarjeta del ganador si existe */}
             {ganador ? (
               <div
@@ -625,18 +727,17 @@ export default function CirculoColores({
                   background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
                   border: '2px solid #f59e0b',
                   borderRadius: '14px',
-                  padding: '16px 20px',
-                  boxShadow: '0 8px 20px rgba(245, 158, 11, 0.25)',
-                  animation: 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+                  padding: esMovil ? '14px' : '16px 20px',
+                  boxShadow: '0 8px 20px rgba(245, 158, 11, 0.25)'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                  <span style={{ fontSize: '36px' }}>🏆</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: '32px' }}>🏆</span>
                   <div>
                     <div style={{ fontSize: '11px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase' }}>
                       ¡Tenemos un Ganador!
                     </div>
-                    <div style={{ fontSize: '24px', fontWeight: 900, color: '#92400e' }}>
+                    <div style={{ fontSize: esMovil ? '20px' : '24px', fontWeight: 900, color: '#92400e' }}>
                       Boleto #{ganador.numero != null ? ganador.numero : ganador.numeroTexto}
                     </div>
                   </div>
@@ -646,16 +747,16 @@ export default function CirculoColores({
                   style={{
                     background: '#ffffff',
                     borderRadius: '10px',
-                    padding: '12px 14px',
+                    padding: '10px 12px',
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                    gap: 10,
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                    gap: 8,
                     fontSize: '13px',
                     border: '1px solid #fcd34d'
                   }}
                 >
                   <div>
-                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block', fontWeight: 700 }}>
+                    <span style={{ color: '#64748b', fontSize: '10px', display: 'block', fontWeight: 700 }}>
                       👤 CLIENTE
                     </span>
                     <strong style={{ color: '#0f172a', fontSize: '14px' }}>
@@ -663,7 +764,7 @@ export default function CirculoColores({
                     </strong>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block', fontWeight: 700 }}>
+                    <span style={{ color: '#64748b', fontSize: '10px', display: 'block', fontWeight: 700 }}>
                       📱 CELULAR
                     </span>
                     <strong style={{ color: '#0f172a', fontSize: '14px' }}>
@@ -671,7 +772,7 @@ export default function CirculoColores({
                     </strong>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block', fontWeight: 700 }}>
+                    <span style={{ color: '#64748b', fontSize: '10px', display: 'block', fontWeight: 700 }}>
                       🎯 DINÁMICA
                     </span>
                     <strong style={{ color: '#047857', fontSize: '13px' }}>
@@ -679,11 +780,12 @@ export default function CirculoColores({
                     </strong>
                   </div>
                   <div>
-                    <span style={{ color: '#64748b', fontSize: '11px', display: 'block', fontWeight: 700 }}>
+                    <span style={{ color: '#64748b', fontSize: '10px', display: 'block', fontWeight: 700 }}>
                       📦 ESTADO
                     </span>
                     <span
                       style={{
+                        display: 'inline-block',
                         padding: '2px 8px',
                         borderRadius: '12px',
                         fontSize: '11px',
@@ -697,7 +799,7 @@ export default function CirculoColores({
                   </div>
                 </div>
 
-                <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     onClick={girar}
@@ -714,6 +816,23 @@ export default function CirculoColores({
                     }}
                   >
                     🎲 Girar de nuevo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMostrarModalGanador(true)}
+                    style={{
+                      background: '#d97706',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '7px 12px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🏆 Ver anuncio grande
                   </button>
 
                   {onCambiarEstadoTicket && ganador.ticket_entregado !== 'Entregado' && (
@@ -734,7 +853,7 @@ export default function CirculoColores({
                         cursor: 'pointer'
                       }}
                     >
-                      ✓ Marcar premio como Entregado
+                      ✓ Marcar como Entregado
                     </button>
                   )}
                 </div>
@@ -745,17 +864,17 @@ export default function CirculoColores({
                   background: '#f8fafc',
                   border: '1px dashed #cbd5e1',
                   borderRadius: '12px',
-                  padding: '16px',
+                  padding: esMovil ? '12px' : '16px',
                   textAlign: 'center',
                   color: '#64748b'
                 }}
               >
-                <span style={{ fontSize: '28px', display: 'block', marginBottom: 6 }}>🎯</span>
-                <strong style={{ color: '#334155', fontSize: '14px' }}>
+                <span style={{ fontSize: '24px', display: 'block', marginBottom: 4 }}>🎯</span>
+                <strong style={{ color: '#334155', fontSize: '13px' }}>
                   Listo para el sorteo
                 </strong>
                 <p style={{ margin: '4px 0 0', fontSize: '12px' }}>
-                  Haz clic en <strong>"¡GIRAR CIRCULO DE COLORES!"</strong> para iniciar la animación y seleccionar al azar un número ganador.
+                  Al pulsar <strong>"GIRAR RULETA DE COLORES"</strong>, la ruleta girará y al detenerse se mostrará inmediatamente el ganador en pantalla.
                 </p>
               </div>
             )}
@@ -769,13 +888,13 @@ export default function CirculoColores({
                 background: '#ffffff',
                 display: 'flex',
                 flexDirection: 'column',
-                flex: 1
+                maxHeight: esMovil ? '220px' : '320px'
               }}
             >
               <div
                 style={{
                   background: '#f1f5f9',
-                  padding: '10px 14px',
+                  padding: '8px 12px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -784,27 +903,27 @@ export default function CirculoColores({
                   flexWrap: 'wrap'
                 }}
               >
-                <span style={{ fontWeight: 700, fontSize: '13px', color: '#1e293b' }}>
-                  📋 Lista de Números en el Circulo de Colores ({tickets.length})
+                <span style={{ fontWeight: 700, fontSize: '12px', color: '#1e293b' }}>
+                  📋 Números en Ruleta ({tickets.length})
                 </span>
                 <input
                   type="text"
-                  placeholder="🔍 Buscar número o cliente..."
+                  placeholder="🔍 Buscar número/cliente..."
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
                   style={{
-                    padding: '5px 10px',
+                    padding: '4px 8px',
                     borderRadius: '6px',
                     border: '1px solid #cbd5e1',
                     fontSize: '12px',
-                    width: '180px'
+                    width: esMovil ? '130px' : '170px'
                   }}
                 />
               </div>
 
-              <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
                 {ticketsFiltrados.length === 0 ? (
-                  <p style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '13px', margin: 0 }}>
+                  <p style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '12px', margin: 0 }}>
                     {totalTickets === 0
                       ? 'No hay números registrados para esta dinámica.'
                       : 'No se encontraron números con esa búsqueda.'}
@@ -813,11 +932,11 @@ export default function CirculoColores({
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '6px 10px', width: '50px' }}>Color</th>
-                        <th style={{ padding: '6px 10px', width: '60px' }}>N°</th>
-                        <th style={{ padding: '6px 10px' }}>Cliente</th>
-                        <th style={{ padding: '6px 10px' }}>Celular</th>
-                        <th style={{ padding: '6px 10px' }}>Estado</th>
+                        <th style={{ padding: '6px 8px', width: '38px' }}>Color</th>
+                        <th style={{ padding: '6px 8px', width: '50px' }}>N°</th>
+                        <th style={{ padding: '6px 8px' }}>Cliente</th>
+                        <th style={{ padding: '6px 8px' }}>Celular</th>
+                        <th style={{ padding: '6px 8px' }}>Estado</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -833,12 +952,12 @@ export default function CirculoColores({
                               color: esElGanador ? '#92400e' : '#1e293b'
                             }}
                           >
-                            <td style={{ padding: '6px 10px' }}>
+                            <td style={{ padding: '6px 8px' }}>
                               <span
                                 style={{
                                   display: 'inline-block',
-                                  width: '14px',
-                                  height: '14px',
+                                  width: '12px',
+                                  height: '12px',
                                   borderRadius: '50%',
                                   background: t.color,
                                   verticalAlign: 'middle',
@@ -846,12 +965,12 @@ export default function CirculoColores({
                                 }}
                               />
                             </td>
-                            <td style={{ padding: '6px 10px', fontWeight: 700 }}>
+                            <td style={{ padding: '6px 8px', fontWeight: 700 }}>
                               #{t.numero != null ? t.numero : t.numeroTexto}
                             </td>
-                            <td style={{ padding: '6px 10px' }}>{t.cliente}</td>
-                            <td style={{ padding: '6px 10px' }}>{t.celular}</td>
-                            <td style={{ padding: '6px 10px' }}>
+                            <td style={{ padding: '6px 8px' }}>{t.cliente}</td>
+                            <td style={{ padding: '6px 8px' }}>{t.celular}</td>
+                            <td style={{ padding: '6px 8px' }}>
                               <span
                                 style={{
                                   padding: '2px 6px',
@@ -874,18 +993,18 @@ export default function CirculoColores({
               </div>
             </div>
 
-            {/* Historial de ganadores si hay más de uno */}
+            {/* Historial de ganadores */}
             {historialGanadores.length > 1 && (
               <div
                 style={{
                   background: '#f8fafc',
                   border: '1px solid #e2e8f0',
                   borderRadius: '10px',
-                  padding: '10px 14px'
+                  padding: '8px 12px'
                 }}
               >
-                <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: 6 }}>
-                  📜 HISTORIAL DE GIROS EN ESTA SESIÓN:
+                <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
+                  📜 Historial de giros:
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {historialGanadores.map((h, i) => (
@@ -910,7 +1029,262 @@ export default function CirculoColores({
           </div>
         </div>
       </div>
+
+      {/* POP-UP / MODAL CELEBRATORIO CUANDO TERMINA DE GIRAR LA RULETA */}
+      {mostrarModalGanador && ganador && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 100000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setMostrarModalGanador(false);
+          }}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(145deg, #ffffff 0%, #fffbeb 100%)',
+              border: '3px solid #f59e0b',
+              borderRadius: '20px',
+              padding: esMovil ? '20px 16px' : '26px 24px',
+              maxWidth: '460px',
+              width: '100%',
+              boxShadow: '0 25px 60px rgba(245, 158, 11, 0.5)',
+              textAlign: 'center',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Marca de agua de fondo con el logotipo en el popup de ganador */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: 'url(/JC.jpeg)',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '240px',
+                opacity: 0.08,
+                pointerEvents: 'none',
+                zIndex: 0
+              }}
+            />
+
+            {/* Botón cerrar esquina */}
+            <button
+              onClick={() => setMostrarModalGanador(false)}
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 12,
+                background: '#f1f5f9',
+                border: 'none',
+                borderRadius: '50%',
+                width: 32,
+                height: 32,
+                fontSize: 16,
+                cursor: 'pointer',
+                color: '#64748b',
+                zIndex: 2
+              }}
+              title="Cerrar ventana de ganador"
+            >
+              ✕
+            </button>
+
+            {/* Logotipo y Trofeo */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 4, position: 'relative', zIndex: 1 }}>
+              <img
+                src="/JC.jpeg"
+                alt="JC Logo"
+                style={{
+                  width: esMovil ? '44px' : '52px',
+                  height: esMovil ? '44px' : '52px',
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: '2.5px solid #f59e0b',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                }}
+              />
+              <span style={{ fontSize: esMovil ? '46px' : '56px', lineHeight: 1 }}>🏆</span>
+            </div>
+
+            <div
+              style={{
+                fontSize: esMovil ? '12px' : '13px',
+                fontWeight: 900,
+                color: '#b45309',
+                textTransform: 'uppercase',
+                letterSpacing: '1px'
+              }}
+            >
+              ¡TENEMOS UN NÚMERO GANADOR!
+            </div>
+
+            {/* Número en tamaño gigante */}
+            <div
+              style={{
+                fontSize: esMovil ? '36px' : '44px',
+                fontWeight: 900,
+                color: '#92400e',
+                background: '#fef3c7',
+                border: '2px dashed #f59e0b',
+                borderRadius: '14px',
+                padding: '8px 18px',
+                margin: '12px auto',
+                display: 'inline-block',
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)'
+              }}
+            >
+              Boleto #{ganador.numero != null ? ganador.numero : ganador.numeroTexto}
+            </div>
+
+            {/* Ficha de datos del cliente ganador */}
+            <div
+              style={{
+                background: '#ffffff',
+                border: '1px solid #fde68a',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                textAlign: 'left',
+                fontSize: '13px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                marginBottom: 16
+              }}
+            >
+              <div>
+                <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, display: 'block' }}>
+                  👤 CLIENTE GANADOR:
+                </span>
+                <strong style={{ fontSize: esMovil ? '15px' : '16px', color: '#0f172a' }}>
+                  {ganador.cliente || '—'}
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <div>
+                  <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, display: 'block' }}>
+                    📱 CELULAR:
+                  </span>
+                  <strong style={{ fontSize: '14px', color: '#047857' }}>
+                    {ganador.celular || '—'}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, display: 'block' }}>
+                    🎯 DINÁMICA:
+                  </span>
+                  <strong style={{ fontSize: '13px', color: '#334155' }}>
+                    {ganador.dinamica || 'Dinámica'}
+                  </strong>
+                </div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, display: 'block' }}>
+                  📦 ESTADO DEL BOLETO:
+                </span>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    marginTop: 2,
+                    padding: '3px 10px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    background: ganador.ticket_entregado === 'Entregado' ? '#dcfce7' : '#fef3c7',
+                    color: ganador.ticket_entregado === 'Entregado' ? '#15803d' : '#b45309'
+                  }}
+                >
+                  {ganador.ticket_entregado === 'Entregado' ? '✅ Entregado' : '⏳ Pendiente'}
+                </span>
+              </div>
+            </div>
+
+            {/* Acciones principales */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {onCambiarEstadoTicket && ganador.ticket_entregado !== 'Entregado' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCambiarEstadoTicket(ganador, 'Entregado');
+                    setGanador((prev) => ({ ...prev, ticket_entregado: 'Entregado' }));
+                  }}
+                  style={{
+                    background: '#16a34a',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '11px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    boxShadow: '0 4px 12px rgba(22, 163, 74, 0.35)'
+                  }}
+                >
+                  ✓ Marcar premio como Entregado
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarModalGanador(false);
+                  girar();
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  boxShadow: '0 4px 12px rgba(234, 88, 12, 0.3)'
+                }}
+              >
+                🎲 Girar ruleta de nuevo
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMostrarModalGanador(false)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '9px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: '#64748b',
+                  cursor: 'pointer'
+                }}
+              >
+                Ver Ruleta y Lista de Participantes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
