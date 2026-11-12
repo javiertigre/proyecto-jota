@@ -21,6 +21,17 @@ const vacio = {
 
 const STORAGE_KEY_ENTREGADOS = 'dinamicas_tickets_entregados';
 
+// Cada Bs 40 de compra genera 1 número de ticket
+const MONTO_POR_TICKET = 40;
+
+const soloDigitos = (valor) => String(valor || '').replace(/[^0-9]/g, '');
+
+const nombreDesdeCliente = (c) =>
+  [c.nombre, c.apellido_paterno, c.apellido_materno]
+    .filter(Boolean)
+    .filter((t) => t !== '—')
+    .join(' ');
+
 const obtenerEstadosEntregadosLocales = () => {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY_ENTREGADOS) || '{}');
@@ -58,6 +69,7 @@ export default function Dinamicas({ avisar }) {
   const [valores, setValores] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [clienteHint, setClienteHint] = useState('');
+  const [clienteInfo, setClienteInfo] = useState(null);
   const [dinamicaSel, setDinamicaSel] = useState(() => {
     try {
       return localStorage.getItem('dinamica_activa') || '';
@@ -213,21 +225,25 @@ export default function Dinamicas({ avisar }) {
   const cambiar = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const cambiarCelular = (valor) => {
-    const celLimpio = valor.trim();
+    const celLimpio = soloDigitos(valor);
     setForm((prev) => {
       if (!celLimpio) {
         setClienteHint('');
+        setClienteInfo(null);
         return { ...prev, celular_cliente: valor };
       }
 
-      // 1. Buscar en Clientes registrados
-      const c = clientes.find((x) => String(x.celular || '').trim() === celLimpio);
+      // 1. Buscar en Clientes registrados (comparando solo dígitos)
+      const c = clientes.find((x) => soloDigitos(x.celular) === celLimpio);
       if (c) {
-        const nombreCompleto = [c.nombre, c.apellido_paterno, c.apellido_materno]
-          .filter(Boolean)
-          .filter((t) => t !== '—')
-          .join(' ');
-        setClienteHint('✓ Cliente existente: ' + nombreCompleto);
+        const nombreCompleto = nombreDesdeCliente(c);
+        setClienteHint('✓ Cliente registrado: ' + nombreCompleto);
+        setClienteInfo({
+          existente: true,
+          nombre: nombreCompleto,
+          celular: c.celular,
+          ciudad: c.ciudad || ''
+        });
         return {
           ...prev,
           celular_cliente: valor,
@@ -236,9 +252,15 @@ export default function Dinamicas({ avisar }) {
       }
 
       // 2. Buscar en dinámicas previas
-      const d = lista.find((x) => String(x.celular_cliente || '').trim() === celLimpio);
+      const d = lista.find((x) => soloDigitos(x.celular_cliente) === celLimpio);
       if (d && d.nombre_completo) {
-        setClienteHint('✓ Cliente de dinámicas: ' + d.nombre_completo);
+        setClienteHint('✓ Cliente de dinámicas: ' + d.nombre_completo + ' (se registrará en Clientes al guardar).');
+        setClienteInfo({
+          existente: false,
+          nombre: d.nombre_completo,
+          celular: valor,
+          ciudad: ''
+        });
         return {
           ...prev,
           celular_cliente: valor,
@@ -246,9 +268,35 @@ export default function Dinamicas({ avisar }) {
         };
       }
 
-      setClienteHint('Celular nuevo (se registrará en Clientes al guardar).');
+      setClienteHint('Celular nuevo: se registrará automáticamente en Clientes al guardar.');
+      setClienteInfo(null);
       return { ...prev, celular_cliente: valor };
     });
+  };
+
+  const alSalirCelular = async () => {
+    const celLimpio = soloDigitos(form.celular_cliente);
+    if (celLimpio.length < 6) return;
+    // Refresca la lista de clientes por si otra persona lo registró recientemente
+    try {
+      const r = await api.get('/api/clientes');
+      const listaNube = r.clientes || [];
+      setClientes(listaNube);
+      const c = listaNube.find((x) => soloDigitos(x.celular) === celLimpio);
+      if (c) {
+        const nombreCompleto = nombreDesdeCliente(c);
+        setClienteHint('✓ Cliente registrado: ' + nombreCompleto);
+        setClienteInfo({
+          existente: true,
+          nombre: nombreCompleto,
+          celular: c.celular,
+          ciudad: c.ciudad || ''
+        });
+        setForm((prev) => ({ ...prev, nombre_completo: nombreCompleto }));
+      }
+    } catch {
+      // Si falla la consulta se mantiene lo que ya se buscó en memoria
+    }
   };
 
   const elegirDinamica = (e) => {
@@ -292,27 +340,54 @@ export default function Dinamicas({ avisar }) {
       avisar('error', 'Primero selecciona una dinámica arriba en Valor Dinámica.');
       return;
     }
+
+    const monto = Number(form.monto_compra);
+    if (!form.monto_compra || !Number.isFinite(monto) || monto <= 0) {
+      avisar('error', 'Primero ingresa el monto de compra para calcular los números de ticket.');
+      return;
+    }
+
+    // 1 número de ticket por cada Bs 40 de compra
+    const cantidad = Math.floor(monto / MONTO_POR_TICKET);
+    if (cantidad < 1) {
+      avisar(
+        'error',
+        `El monto debe ser de al menos Bs ${MONTO_POR_TICKET.toFixed(2)} para generar 1 número de ticket (cada Bs ${MONTO_POR_TICKET} = 1 ticket).`
+      );
+      return;
+    }
+
     // Respetar estrictamente el último número correlativo registrado
     const ultimo = obtenerUltimoTicketRegistrado(editId);
-    const siguiente = ultimo + 1;
+    const desde = ultimo + 1;
+    const hasta = ultimo + cantidad;
+    const nTicket = cantidad === 1 ? String(desde) : `${desde}-${hasta}`;
 
     setForm((prev) => ({
       ...prev,
-      n_ticket: String(siguiente),
-      numero_desde: siguiente,
-      numero_hasta: siguiente
+      n_ticket: nTicket,
+      numero_desde: desde,
+      numero_hasta: hasta
     }));
 
-    avisar('exito', `Generado boleto #${siguiente} (siguiendo al último boleto registrado #${ultimo}).`);
+    const sobrante = monto % MONTO_POR_TICKET;
+    avisar(
+      'exito',
+      `Monto Bs ${monto.toFixed(2)} → ${cantidad} número${cantidad > 1 ? 's' : ''} de ticket ` +
+      `(${cantidad === 1 ? '#' + desde : '#' + desde + ' al #' + hasta})` +
+      (sobrante > 0 ? `. Sobran Bs ${sobrante.toFixed(2)} sin boleto.` : '.')
+    );
   };
 
   const cancelar = () => {
     setEditId(null);
     setClienteHint('');
+    setClienteInfo(null);
     const activa = valores.find((v) => v.nombre === dinamicaSel);
     setForm({
       ...vacio,
-      fecha_compra: hoy(),
+      // Mantiene la fecha elegida para seguir registrando compradores del mismo día
+      fecha_compra: form.fecha_compra || hoy(),
       dinamica_nombre: dinamicaSel || '',
       valor_dinamica: activa ? activa.valor : '',
       ticket_entregado: 'Pendiente'
@@ -358,7 +433,7 @@ export default function Dinamicas({ avisar }) {
 
     try {
       // Si el cliente no existe en Clientes, guardarlo automáticamente
-      const existeEnClientes = clientes.some((c) => String(c.celular || '').trim() === cel);
+      const existeEnClientes = clientes.some((c) => soloDigitos(c.celular) === soloDigitos(cel));
       let nuevoClienteRegistrado = false;
       if (!existeEnClientes) {
         try {
@@ -374,7 +449,15 @@ export default function Dinamicas({ avisar }) {
             nuevoClienteRegistrado = true;
           }
         } catch (errCli) {
-          console.warn('Registro automático en clientes:', errCli.message);
+          // Si ya existe (por ejemplo, se registró en otro dispositivo), refresca la lista
+          if (/ya se encuentra registrado/i.test(errCli.message || '')) {
+            try {
+              const r = await api.get('/api/clientes');
+              setClientes(r.clientes || []);
+            } catch {}
+          } else {
+            console.warn('Registro automático en clientes:', errCli.message);
+          }
         }
       }
 
@@ -412,13 +495,15 @@ export default function Dinamicas({ avisar }) {
           'exito',
           'Comprador registrado en la dinámica' + (nuevoClienteRegistrado ? ' y agregado a Clientes.' : '.')
         );
-        // Mantiene la dinámica seleccionada para registrar a los siguientes compradores
+        // Mantiene la dinámica y la fecha seleccionadas para registrar a los siguientes compradores
         const dinamicaMantener = form.dinamica_nombre;
         const valorMantener = form.valor_dinamica;
+        const fechaMantener = form.fecha_compra || hoy();
         setClienteHint('');
+        setClienteInfo(null);
         setForm({
           ...vacio,
-          fecha_compra: hoy(),
+          fecha_compra: fechaMantener,
           dinamica_nombre: dinamicaMantener,
           valor_dinamica: valorMantener,
           ticket_entregado: 'Pendiente'
@@ -433,6 +518,7 @@ export default function Dinamicas({ avisar }) {
   const editar = (x) => {
     setEditId(x.id);
     setClienteHint('');
+    setClienteInfo(null);
     setForm({
       celular_cliente: x.celular_cliente || '',
       nombre_completo: x.nombre_completo || '',
@@ -1057,6 +1143,12 @@ export default function Dinamicas({ avisar }) {
     w.focus();
   };
 
+  const montoNum = Number(form.monto_compra);
+  const boletosEstimados =
+    form.monto_compra !== '' && Number.isFinite(montoNum) && montoNum > 0
+      ? Math.floor(montoNum / MONTO_POR_TICKET)
+      : 0;
+
   return (
     <>
       <div className="card">
@@ -1094,24 +1186,34 @@ export default function Dinamicas({ avisar }) {
         ) : (
           <form className="grid2" onSubmit={guardar}>
             <div className="full" style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
-              <label style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b' }}>
-                🎯 Valor Dinámica
-              </label>
-              <select name="dinamica_nombre" value={form.dinamica_nombre} onChange={elegirDinamica} required>
-                <option value="">{valores.length === 0 ? 'Primero crea una dinámica' : '-- Selecciona una dinámica (se mantiene para varios compradores) --'}</option>
-                {valores.map((v) => (
-                  <option key={v.id} value={v.nombre}>
-                    {v.nombre} — Bs {Number(v.valor).toFixed(2)}
-                  </option>
-                ))}
-              </select>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b' }}>
+                    🎯 Valor Dinámica
+                  </label>
+                  <select name="dinamica_nombre" value={form.dinamica_nombre} onChange={elegirDinamica} required>
+                    <option value="">{valores.length === 0 ? 'Primero crea una dinámica' : '-- Selecciona una dinámica (se mantiene para varios compradores) --'}</option>
+                    {valores.map((v) => (
+                      <option key={v.id} value={v.nombre}>
+                        {v.nombre} — Bs {Number(v.valor).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b' }}>
+                    📅 Fecha de Compra
+                  </label>
+                  <input name="fecha_compra" type="date" value={form.fecha_compra} onChange={cambiar} required />
+                </div>
+              </div>
               {form.dinamica_nombre && form.valor_dinamica != null && form.valor_dinamica !== '' ? (
                 <small className="hint" style={{ marginTop: 6, color: '#15803d', fontWeight: 600 }}>
-                  ✓ Dinámica activa: <strong>{form.dinamica_nombre}</strong> (Bs {Number(form.valor_dinamica).toFixed(2)} por boleto). Se mantiene fija para registrar compradores consecutivos.
+                  ✓ Dinámica activa: <strong>{form.dinamica_nombre}</strong> (Bs {Number(form.valor_dinamica).toFixed(2)} por boleto) · Fecha fija: <strong>{form.fecha_compra || hoy()}</strong>. Se mantienen para registrar compradores consecutivos.
                 </small>
               ) : (
                 <small className="hint" style={{ marginTop: 6 }}>
-                  💡 Selecciona la dinámica una sola vez. Se mantendrá activa para registrar a todos los compradores.
+                  💡 Selecciona la dinámica y la fecha una sola vez. Se mantendrán activas para registrar a todos los compradores.
                 </small>
               )}
             </div>
@@ -1122,6 +1224,8 @@ export default function Dinamicas({ avisar }) {
                 name="celular_cliente"
                 value={form.celular_cliente}
                 onChange={(e) => cambiarCelular(e.target.value)}
+                onBlur={alSalirCelular}
+                placeholder="Ej: 77712345"
                 required
               />
               {clienteHint && (
@@ -1137,6 +1241,24 @@ export default function Dinamicas({ avisar }) {
                   {clienteHint}
                 </small>
               )}
+              {clienteInfo && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: clienteInfo.existente ? '1px solid #86efac' : '1px solid #cbd5e1',
+                    background: clienteInfo.existente ? '#ecfdf5' : '#f8fafc'
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 800, color: clienteInfo.existente ? '#166534' : '#475569', marginBottom: 4 }}>
+                    {clienteInfo.existente ? '✅ CLIENTE REGISTRADO' : '🆕 CLIENTE NUEVO (se registrará al guardar)'}
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>👤 {clienteInfo.nombre || form.nombre_completo || '—'}</div>
+                  <div style={{ fontSize: 13, color: '#1d4ed8', fontWeight: 700 }}>📱 {clienteInfo.celular || form.celular_cliente}</div>
+                  {clienteInfo.ciudad ? <div style={{ fontSize: 12, color: '#64748b' }}>📍 {clienteInfo.ciudad}</div> : null}
+                </div>
+              )}
             </div>
             <div>
               <label>Nombre Completo</label>
@@ -1145,6 +1267,13 @@ export default function Dinamicas({ avisar }) {
             <div>
               <label>Monto Compra</label>
               <input name="monto_compra" type="number" step="0.01" min="0" value={form.monto_compra} onChange={cambiar} required />
+              <small className="hint" style={{ display: 'block', marginTop: 4 }}>
+                {form.monto_compra === ''
+                  ? `Cada Bs ${MONTO_POR_TICKET} de compra genera 1 número de ticket.`
+                  : boletosEstimados > 0
+                    ? `🟢 Bs ${montoNum.toFixed(2)} → ${boletosEstimados} número${boletosEstimados > 1 ? 's' : ''} de ticket.`
+                    : `⚠️ Monto mínimo: Bs ${MONTO_POR_TICKET.toFixed(2)} para generar 1 ticket.`}
+              </small>
             </div>
             <div>
               <label>N° Ticket</label>
@@ -1152,10 +1281,9 @@ export default function Dinamicas({ avisar }) {
                 <input name="n_ticket" value={form.n_ticket} onChange={cambiar} style={{ flex: 1 }} />
                 <button type="button" onClick={generarNumero} style={{ whiteSpace: 'nowrap' }}>Generar Numero</button>
               </div>
-            </div>
-            <div>
-              <label>Fecha de Compra</label>
-              <input name="fecha_compra" type="date" value={form.fecha_compra} onChange={cambiar} />
+              <small className="hint" style={{ display: 'block', marginTop: 4 }}>
+                Calcula automáticamente los números consecutivos según el monto de compra.
+              </small>
             </div>
             <div>
               <label>Ticket Entregado</label>
