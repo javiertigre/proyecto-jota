@@ -172,6 +172,20 @@ export default function ReporteVentas({ avisar }) {
             <p className="empty">Sin ventas en esas fechas.</p>
           ) : (
             <>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '10px 0 4px' }}>
+                <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 16px', minWidth: 180 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total Depósito</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#b45309' }}>Bs {Number(totDep).toFixed(2)}</div>
+                </div>
+                <div style={{ background: '#dcfce7', border: '1px solid #86efac', borderRadius: 10, padding: '10px 16px', minWidth: 180 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#166534', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total Precio Venta</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#15803d' }}>Bs {Number(totVen).toFixed(2)}</div>
+                </div>
+                <div style={{ background: '#e0e7ff', border: '1px solid #a5b4fc', borderRadius: 10, padding: '10px 16px', minWidth: 180 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#3730a3', textTransform: 'uppercase', letterSpacing: '.04em' }}>Ventas / Fardos</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#3730a3' }}>{items.length} · {grupos.length}</div>
+                </div>
+              </div>
               <div className="tabla tabla-ancha">
                 <table>
                   <thead>
@@ -182,7 +196,7 @@ export default function ReporteVentas({ avisar }) {
                       <Fragment key={g.fardo}>
                         <tr style={{ background: '#fef3c7' }}>
                           <td colSpan="13" style={{ fontWeight: 800, color: '#713f12' }}>
-                            📦 FARDO: {g.fardo} · {g.items.length} venta{g.items.length === 1 ? '' : 's'}
+                            📦 FARDO: {g.fardo} · {g.items.length} venta{g.items.length === 1 ? '' : 's'} · Depósito: Bs {Number(g.totalDeposito).toFixed(2)}
                           </td>
                         </tr>
                         {g.items.map((it, i) => (
@@ -204,9 +218,9 @@ export default function ReporteVentas({ avisar }) {
                         ))}
                         <tr style={{ background: '#fef9c3', fontWeight: 700 }}>
                           <td colSpan="3">SUBTOTAL {g.fardo}</td>
-                          <td>{g.totalOriginal}</td>
-                          <td>{g.totalVenta}</td>
-                          <td><strong style={{ color: '#b45309' }}>{g.totalDeposito}</strong></td>
+                          <td data-label="P. orig. total">{g.totalOriginal}</td>
+                          <td data-label="P. venta total">{g.totalVenta}</td>
+                          <td data-label="Depósito total"><strong style={{ color: '#b45309' }}>Bs {Number(g.totalDeposito).toFixed(2)}</strong></td>
                           <td colSpan="7"></td>
                         </tr>
                       </Fragment>
@@ -215,15 +229,15 @@ export default function ReporteVentas({ avisar }) {
                   <tfoot>
                     <tr>
                       <td colSpan="3"><strong>TOTAL GENERAL ({items.length} ventas)</strong></td>
-                      <td><strong>{totalOriginal}</strong></td>
-                      <td><strong>{totVen}</strong></td>
-                      <td><strong>{totDep}</strong></td>
+                      <td data-label="P. orig. total"><strong>{totalOriginal}</strong></td>
+                      <td data-label="P. venta total"><strong>{Number(totVen).toFixed(2)}</strong></td>
+                      <td data-label="Depósito total"><strong style={{ color: '#b45309' }}>Bs {Number(totDep).toFixed(2)}</strong></td>
                       <td colSpan="7"></td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
-              <p className="hint">Agrupado por tipo de fardo y ordenado por código · Suma total Depósito: <strong>{totDep}</strong> · Suma Precio venta: <strong>{totVen}</strong></p>
+              <p className="hint">Agrupado por tipo de fardo y ordenado por código · Total Depósito: <strong>Bs {Number(totDep).toFixed(2)}</strong> · Total Precio venta: <strong>Bs {Number(totVen).toFixed(2)}</strong></p>
             </>
           )}
         </div>
