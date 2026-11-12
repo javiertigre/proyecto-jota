@@ -87,6 +87,9 @@ export default function Dinamicas({ avisar }) {
   const [busquedaCelular, setBusquedaCelular] = useState('');
   const [pagina, setPagina] = useState(1);
   const [generandoExcel, setGenerandoExcel] = useState(false);
+  const [verFiltroPdf, setVerFiltroPdf] = useState(false);
+  const [pdfDesde, setPdfDesde] = useState('');
+  const [pdfHasta, setPdfHasta] = useState('');
   const POR_PAGINA = 10;
 
   const cargar = async () => {
@@ -758,23 +761,48 @@ export default function Dinamicas({ avisar }) {
     }
   };
 
-  const exportarSorteoPDF = () => {
-    const origen = visibles.length > 0 && (tieneFiltroTicket || tieneFiltroCelular) ? visibles : lista;
+  const exportarSorteoPDF = (filtro = {}) => {
+    const desde = String(filtro.desde || '').trim();
+    const hasta = String(filtro.hasta || '').trim();
+
+    if (desde && hasta && desde > hasta) {
+      avisar('error', 'La fecha "Desde" no puede ser mayor que la fecha "Hasta".');
+      return;
+    }
+
+    const origenBase = visibles.length > 0 && (tieneFiltroTicket || tieneFiltroCelular) ? visibles : lista;
+    // Filtrar por rango de fechas de compra (las fechas se guardan como AAAA-MM-DD)
+    const origen = (desde || hasta)
+      ? origenBase.filter((x) => {
+          const f = String(x.fecha_compra || '').trim();
+          if (!f) return false;
+          if (desde && f < desde) return false;
+          if (hasta && f > hasta) return false;
+          return true;
+        })
+      : origenBase;
+
     // Solo números en estado Pendiente (los entregados no se muestran para imprimir)
     const soloPendientes = origen.filter((x) => (x.ticket_entregado || 'Pendiente') !== 'Entregado');
     const tickets = desglosarTickets(soloPendientes);
 
     if (tickets.length === 0) {
       const totalEntregados = desglosarTickets(origen.filter((x) => (x.ticket_entregado || 'Pendiente') === 'Entregado')).length;
+      const rango = desde || hasta
+        ? ` en el rango ${desde || 'inicio'} a ${hasta || 'hoy'}`
+        : '';
       if (totalEntregados > 0) {
-        avisar('info', `Los ${totalEntregados} boletos ya están en estado "Entregado". El reporte solo imprime boletos "Pendientes".`);
+        avisar('info', `Los ${totalEntregados} boletos${rango} ya están en estado "Entregado". El reporte solo imprime boletos "Pendientes".`);
       } else {
-        avisar('error', 'No hay boletos pendientes para generar el PDF.');
+        avisar('error', `No hay boletos pendientes para generar el PDF${rango}.`);
       }
       return;
     }
 
-    const titulo = 'Gran Sorteo el 27 de Noviembre — Boletos Pendientes';
+    const rangoTexto = desde || hasta
+      ? `${desde || 'inicio'} a ${hasta || 'hoy'}`
+      : 'todas las fechas';
+    const titulo = `Gran Sorteo el 27 de Noviembre — Boletos Pendientes (${rangoTexto})`;
     const fecha = new Date().toLocaleString();
     const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -800,7 +828,7 @@ export default function Dinamicas({ avisar }) {
         res.push(`
           <div class="hoja">
             <div class="hoja-header">
-              <span>GRAN SORTEO EL 27 DE NOVIEMBRE (PENDIENTES)</span>
+              <span>GRAN SORTEO EL 27 DE NOVIEMBRE (PENDIENTES) · ${escH(rangoTexto)}</span>
               <span>Página ${Math.floor(i / porHoja) + 1} de ${totalHojas}</span>
             </div>
             <div class="grid cols-${cols}">${celdas}</div>
@@ -1050,7 +1078,7 @@ export default function Dinamicas({ avisar }) {
           <div>
             <strong style="font-size:15px;color:#0f172a">🎯 GRAN SORTEO EL 27 DE NOVIEMBRE — SOLO PENDIENTES</strong>
             <div style="font-size:12px;color:#64748b;margin-top:2px">
-              ${tickets.length} boletos pendientes de entrega (los entregados no se imprimen) · ${fecha}
+              ${tickets.length} boletos pendientes de entrega (los entregados no se imprimen) · Fechas: ${escH(rangoTexto)} · ${fecha}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -1080,8 +1108,8 @@ export default function Dinamicas({ avisar }) {
         </div>
 
         <div id="vista-tabla" style="display:none">
-          <h2 style="margin:0 0 4px">GRAN SORTEO EL 27 DE NOVIEMBRE — BOLETOS PENDIENTES</h2>
-          <p style="color:#64748b;margin:0 0 10px;font-size:12px">${tickets.length} boletos pendientes de entrega · ${fecha}</p>
+          <h2 style="margin:0 0 4px">GRAN SORTEO EL 27 DE NOVIEMBRE — BOLETOS PENDIENTES (${escH(rangoTexto)})</h2>
+          <p style="color:#64748b;margin:0 0 10px;font-size:12px">${tickets.length} boletos pendientes de entrega · Fechas: ${escH(rangoTexto)} · ${fecha}</p>
           <table>
             <thead>
               <tr>
@@ -1148,6 +1176,9 @@ export default function Dinamicas({ avisar }) {
     form.monto_compra !== '' && Number.isFinite(montoNum) && montoNum > 0
       ? Math.floor(montoNum / MONTO_POR_TICKET)
       : 0;
+
+  // Fechas con registros para elegir rápidamente en el PDF
+  const fechasDisponibles = [...new Set(lista.map((x) => x.fecha_compra).filter(Boolean))].sort();
 
   return (
     <>
@@ -1326,11 +1357,11 @@ export default function Dinamicas({ avisar }) {
               <button
                 type="button"
                 className="btn-edit"
-                onClick={exportarSorteoPDF}
+                onClick={() => setVerFiltroPdf((v) => !v)}
                 disabled={lista.length === 0}
-                title="Imprimir boletos para recortar (solo boletos en estado Pendiente)"
+                title="Elegir fechas e imprimir boletos para recortar (solo boletos en estado Pendiente)"
               >
-                📄 Boletos PDF (Solo Pendientes)
+                📄 Boletos PDF por fechas
               </button>
               <button
                 type="button"
@@ -1357,6 +1388,90 @@ export default function Dinamicas({ avisar }) {
               </button>
             </div>
           </div>
+
+          {verFiltroPdf && (
+            <div style={{
+              background: '#eef2ff',
+              border: '1px solid #c7d2fe',
+              borderRadius: 8,
+              padding: '14px 16px',
+              margin: '0 0 14px'
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#1e3a8a', marginBottom: 10 }}>
+                📅 Elegir fechas para generar los boletos PDF
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: '13px', color: '#1e293b' }}>Desde</label>
+                  <input
+                    type="date"
+                    value={pdfDesde}
+                    onChange={(e) => setPdfDesde(e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: '13px', color: '#1e293b' }}>Hasta</label>
+                  <input
+                    type="date"
+                    value={pdfHasta}
+                    onChange={(e) => setPdfHasta(e.target.value)}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      setVerFiltroPdf(false);
+                      exportarSorteoPDF({ desde: pdfDesde, hasta: pdfHasta });
+                    }}
+                  >
+                    🖨️ Generar PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPdfDesde(''); setPdfHasta(''); }}
+                    title="Quitar el filtro y usar todas las fechas"
+                  >
+                    Todas
+                  </button>
+                  <button type="button" onClick={() => setVerFiltroPdf(false)}>Cancelar</button>
+                </div>
+              </div>
+
+              {fechasDisponibles.length > 0 && (
+                <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>Fechas con registros:</span>
+                  {fechasDisponibles.map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => { setPdfDesde(f); setPdfHasta(f); }}
+                      style={{
+                        padding: '4px 9px',
+                        borderRadius: 14,
+                        border: '1px solid',
+                        borderColor: pdfDesde === f && pdfHasta === f ? '#1d4ed8' : '#c7d2fe',
+                        background: pdfDesde === f && pdfHasta === f ? '#1d4ed8' : '#ffffff',
+                        color: pdfDesde === f && pdfHasta === f ? '#ffffff' : '#1e40af',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <small className="hint" style={{ display: 'block', marginTop: 8 }}>
+                💡 Elige un solo día con los botones de fecha o un rango con “Desde” y “Hasta”. Si no eliges fechas, se generan todos los boletos pendientes.
+              </small>
+            </div>
+          )}
 
           {/* BUSCADORES: POR N° TICKET O POR CELULAR (HISTORIAL POR FECHAS) */}
           <div style={{
