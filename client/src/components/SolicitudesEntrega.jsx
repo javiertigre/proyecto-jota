@@ -63,14 +63,13 @@ export default function SolicitudesEntrega({ avisar }) {
   const [clientes, setClientes] = useState([]);
   const [lugares, setLugares] = useState([]);
   const [destinosLista, setDestinosLista] = useState(DESTINOS_INTERIOR);
-  const [cargando, setCargando] = useState(true);
+  const [cargando, setCargando] = useState(false);
   const [faltaTabla, setFaltaTabla] = useState(false);
-  const [desde, setDesde] = useState(() => hoyISO());
-  const [hasta, setHasta] = useState(() => hoyISO());
+  const [fechaFiltro, setFechaFiltro] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [clienteTexto, setClienteTexto] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState('LP');
   const [pagina, setPagina] = useState(1);
   const [form, setForm] = useState(formVacio);
   const [guardando, setGuardando] = useState(false);
@@ -78,12 +77,17 @@ export default function SolicitudesEntrega({ avisar }) {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
 
   async function cargar() {
+    if (!fechaFiltro) {
+      setRegistros([]);
+      setCargando(false);
+      return;
+    }
     setCargando(true);
     try {
       const params = new URLSearchParams();
-      if (desde) params.set('desde', desde);
-      if (hasta) params.set('hasta', hasta);
-      const r = await api.get('/api/registro-entregas' + (params.toString() ? '?' + params.toString() : ''));
+      params.set('desde', fechaFiltro);
+      params.set('hasta', fechaFiltro);
+      const r = await api.get('/api/registro-entregas?' + params.toString());
       setRegistros(r.items || []);
       setFaltaTabla(false);
     } catch (err) {
@@ -120,9 +124,14 @@ export default function SolicitudesEntrega({ avisar }) {
   }, []);
 
   useEffect(() => {
-    cargar();
+    if (fechaFiltro) {
+      cargar();
+    } else {
+      setRegistros([]);
+      setCargando(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desde, hasta]);
+  }, [fechaFiltro]);
 
   const lugarRecogidaDe = (r) => lugares.find((x) => String(x.id) === String(r.lugar_entrega_id));
 
@@ -179,27 +188,19 @@ export default function SolicitudesEntrega({ avisar }) {
     normalizar(nombreCompleto(a)).localeCompare(normalizar(nombreCompleto(b)), 'es', { numeric: true })
   );
 
-  useEffect(() => { setPagina(1); }, [desde, hasta, busqueda, filtroEstado, filtroTipo]);
+  useEffect(() => { setPagina(1); }, [fechaFiltro, busqueda, filtroEstado, filtroTipo]);
   useEffect(() => {
     setPagina((p) => Math.min(p, Math.max(1, Math.ceil(filtrados.length / POR_PAGINA))));
   }, [filtrados.length]);
 
-  const cambiarDesde = (e) => {
-    const valor = e.target.value;
-    setDesde(valor);
-    if (valor && hasta && valor > hasta) setHasta(valor);
-  };
-
-  const cambiarHasta = (e) => {
-    const valor = e.target.value;
-    setHasta(valor);
-    if (valor && desde && valor < desde) setDesde(valor);
-  };
-
   const cambiar = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const abrirFormulario = (tipo) => {
-    setForm(formVacio(tipo));
+    const f = formVacio(tipo);
+    if (fechaFiltro) {
+      f.fecha_entrega = fechaFiltro;
+    }
+    setForm(f);
     setClienteTexto('');
     setMostrarFormulario(true);
   };
@@ -240,20 +241,6 @@ export default function SolicitudesEntrega({ avisar }) {
       lugar_texto: ''
     }));
     if (c) cargarUbicacionCliente(c);
-  };
-
-  const incluirFechaEnFiltro = (fecha) => {
-    if (!fecha) return false;
-    let nuevoDesde = desde;
-    let nuevoHasta = hasta;
-    let cambio = false;
-    if (nuevoDesde && fecha < nuevoDesde) { nuevoDesde = fecha; cambio = true; }
-    if (nuevoHasta && fecha > nuevoHasta) { nuevoHasta = fecha; cambio = true; }
-    if (cambio) {
-      setDesde(nuevoDesde);
-      setHasta(nuevoHasta);
-    }
-    return cambio;
   };
 
   const guardar = async (e) => {
@@ -299,7 +286,13 @@ export default function SolicitudesEntrega({ avisar }) {
       setForm(formVacio());
       setClienteTexto('');
       setMostrarFormulario(false);
-      if (!incluirFechaEnFiltro(fechaGuardada)) await cargar();
+      if (fechaGuardada) {
+        if (fechaFiltro === fechaGuardada) {
+          await cargar();
+        } else {
+          setFechaFiltro(fechaGuardada);
+        }
+      }
     } catch (err) {
       avisar('error', err.message);
     } finally {
@@ -380,7 +373,7 @@ export default function SolicitudesEntrega({ avisar }) {
         <td class="col-lugar"${estilo('lapaz')}>${ciudad === 'lapaz' ? lugar : ''}</td>
       </tr>`;
     }).join('');
-    const fecha = fechaEnTexto(desde && hasta && desde === hasta ? desde : hoyISO());
+    const fecha = fechaEnTexto(fechaFiltro || hoyISO());
     const totalElAlto = datosReporte.filter((r) => ciudadReporte(r) === 'elalto').length;
     const totalLaPaz = datosReporte.filter((r) => ciudadReporte(r) === 'lapaz').length;
     const totalObservaciones = datosReporte.filter((r) => String(r.observacion || '').trim()).length;
@@ -494,7 +487,7 @@ export default function SolicitudesEntrega({ avisar }) {
           const blob = await new Promise((resolver, rechazar) => {
             canvas.toBlob((b) => b ? resolver(b) : rechazar(new Error('No se pudo crear la imagen.')), 'image/png', 1);
           });
-          const fechaArchivo = desde && hasta && desde === hasta ? desde : hoyISO();
+          const fechaArchivo = fechaFiltro || hoyISO();
           const nombre = 'entregas-la-paz-' + fechaArchivo + '.png';
           const archivo = new File([blob], nombre, { type: 'image/png' });
           if (w.navigator.canShare && w.navigator.canShare({ files: [archivo] })) {
@@ -544,7 +537,7 @@ export default function SolicitudesEntrega({ avisar }) {
       <td class="col-cel">${escH(r.cliente_celular || '—')}</td>
       <td class="col-destino"><strong>${escH(r.destino || '—')}</strong></td>
     </tr>`).join('');
-    const fecha = fechaEnTexto(desde && hasta && desde === hasta ? desde : hoyISO());
+    const fecha = fechaEnTexto(fechaFiltro || hoyISO());
     const destinosUnicos = [...new Set(datosReporte.map((r) => r.destino).filter(Boolean))].length;
     const totalEntregadas = datosReporte.filter((r) => r.estado === 'E').length;
     const totalPendientes = datosReporte.filter((r) => r.estado !== 'E').length;
@@ -618,7 +611,7 @@ export default function SolicitudesEntrega({ avisar }) {
         <tbody>${filas}</tbody>
       </table>
       <div class="pie">
-        <div style="font-size:10px;color:#6b7280">Capricornio Detalles · Envíos y entregas a nivel nacional</div>
+        <div style="font-size:10px;color:#6b7280 ">Capricornio Detalles · Envíos y entregas a nivel nacional</div>
         <div class="generado">Documento generado automáticamente<br>Capricornio Detalles · JC</div>
       </div>
       </main>
@@ -654,7 +647,7 @@ export default function SolicitudesEntrega({ avisar }) {
           const blob = await new Promise((resolver, rechazar) => {
             canvas.toBlob((b) => b ? resolver(b) : rechazar(new Error('No se pudo crear la imagen.')), 'image/png', 1);
           });
-          const fechaArchivo = desde && hasta && desde === hasta ? desde : hoyISO();
+          const fechaArchivo = fechaFiltro || hoyISO();
           const nombre = 'entregas-interior-' + fechaArchivo + '.png';
           const archivo = new File([blob], nombre, { type: 'image/png' });
           if (w.navigator.canShare && w.navigator.canShare({ files: [archivo] })) {
@@ -735,47 +728,92 @@ export default function SolicitudesEntrega({ avisar }) {
           </button>
         </div>
 
-        <form className="filtros-entregas-grid" onSubmit={(e) => e.preventDefault()}>
-          <div>
-            <label>Desde</label>
-            <input type="date" value={desde} onChange={cambiarDesde} />
-          </div>
-          <div>
-            <label>Hasta</label>
-            <input type="date" value={hasta} onChange={cambiarHasta} />
-          </div>
-          <div>
-            <label>🔍 Buscar cliente o lugar</label>
+        <div style={{ maxWidth: 420, margin: '10px 0 16px' }}>
+          <label style={{ display: 'block', fontSize: 14, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
+            📅 Fecha de entrega
+          </label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
-              type="search"
-              placeholder="Ej: Juan, 77712345 o Terminal"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
+              type="date"
+              value={fechaFiltro}
+              onChange={(e) => setFechaFiltro(e.target.value)}
+              style={{ flex: 1, minHeight: 44 }}
             />
+            <button
+              type="button"
+              className="btn-secundario"
+              onClick={() => setFechaFiltro(hoyISO())}
+              title="Seleccionar la fecha de hoy"
+              style={{ minHeight: 44, padding: '0 14px', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600 }}
+            >
+              ⚡ Hoy
+            </button>
+            {fechaFiltro && (
+              <button
+                type="button"
+                className="btn-secundario"
+                onClick={() => setFechaFiltro('')}
+                title="Limpiar fecha"
+                style={{ minHeight: 44, padding: '0 12px', fontSize: 13, color: '#ef4444' }}
+              >
+                ✕ Limpiar
+              </button>
+            )}
           </div>
-          <div>
-            <label>Tipo de entrega</label>
-            <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
-              <option value="">Todas (La Paz e Interior)</option>
-              <option value="LP">🏙️ Entregas La Paz</option>
-              <option value="INT">🌎 Entregas Interior</option>
-            </select>
-          </div>
-          <div>
-            <label>Estado</label>
-            <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}>
-              <option value="">Todos</option>
-              <option value="P">⏳ Pendientes</option>
-              <option value="E">✅ Entregadas</option>
-            </select>
-          </div>
-        </form>
-
-        <div className="resumen-analisis">
-          <div className="resumen-item"><span>Total listado</span><strong>{total}</strong></div>
-          <div className="resumen-item"><span>Pendientes</span><strong>{pendientes}</strong></div>
-          <div className="resumen-item"><span>Entregadas</span><strong>{entregadas}</strong></div>
         </div>
+
+        {!fechaFiltro ? (
+          <div style={{
+            background: '#f8fafc',
+            border: '1px dashed #cbd5e1',
+            borderRadius: 8,
+            padding: '16px 20px',
+            color: '#475569',
+            fontSize: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10
+          }}>
+            <span style={{ fontSize: 20 }}>👉</span>
+            <span>Selecciona una <strong>fecha de entrega</strong> para ver los filtros y el listado de pedidos.</span>
+          </div>
+        ) : (
+          <>
+            <form className="filtros-entregas-grid" onSubmit={(e) => e.preventDefault()}>
+              <div>
+                <label>Tipo de entrega</label>
+                <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
+                  <option value="LP">🏙️ Entregas La Paz</option>
+                  <option value="INT">🌎 Entregas Interior</option>
+                  <option value="">Todas (La Paz e Interior)</option>
+                </select>
+              </div>
+              <div>
+                <label>🔍 Buscar cliente o lugar</label>
+                <input
+                  type="search"
+                  placeholder="Ej: Juan, 77712345 o Terminal"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                />
+              </div>
+              <div>
+                <label>Estado</label>
+                <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}>
+                  <option value="">Todos</option>
+                  <option value="P">⏳ Pendientes</option>
+                  <option value="E">✅ Entregadas</option>
+                </select>
+              </div>
+            </form>
+
+            <div className="resumen-analisis">
+              <div className="resumen-item"><span>Total listado</span><strong>{total}</strong></div>
+              <div className="resumen-item"><span>Pendientes</span><strong>{pendientes}</strong></div>
+              <div className="resumen-item"><span>Entregadas</span><strong>{entregadas}</strong></div>
+            </div>
+          </>
+        )}
       </div>
 
       {mostrarFormulario && (
@@ -947,73 +985,75 @@ export default function SolicitudesEntrega({ avisar }) {
         </div>
       )}
 
-      <div className="card">
-        <h2>📋 Listado de entregas ({filtrados.length})</h2>
-        <div className="btn-grupo-reportes">
-          <button type="button" className="btn-reporte btn-reporte-lapaz" onClick={imprimirReporte}>
-            📄 Reporte Entregas La Paz / El Alto
-          </button>
-          <button type="button" className="btn-reporte btn-reporte-interior" onClick={imprimirReporteInterior}>
-            🌎 Reporte Entregas al Interior
-          </button>
-        </div>
-        {cargando ? (
-          <p className="empty">Cargando entregas...</p>
-        ) : filtrados.length === 0 ? (
-          <p className="empty">No hay entregas para los filtros seleccionados.</p>
-        ) : (
-          <div className="tabla">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Cliente</th>
-                  <th>Celular</th>
-                  <th>Lugar donde recogerá</th>
-                  <th>Lugar del pedido</th>
-                  <th>Destino</th>
-                  <th>Estado</th>
-                  <th>Observación</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginados.map((r) => (
-                  <tr key={r.id} className={r.estado === 'E' ? 'estado-E' : 'estado-P'}>
-                    <td data-label="Fecha">{r.fecha_entrega || '—'}</td>
-                    <td data-label="Cliente">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>{r.cliente_nombre}</span>
-                        {(r.tipo === 'INT' || r.destino) && (
-                          <span style={{ fontSize: 10, background: '#ccfbf1', color: '#0f766e', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
-                            INTERIOR
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td data-label="Celular">{r.cliente_celular || '—'}</td>
-                    <td data-label="Lugar donde recogerá">{textoRecogida(r) || (r.tipo === 'INT' ? '—' : '—')}</td>
-                    <td data-label="Lugar del pedido">{r.lugar_texto}</td>
-                    <td data-label="Destino">{r.destino ? <strong>{r.destino}</strong> : '—'}</td>
-                    <td data-label="Estado">
-                      {r.estado === 'E' ? '✅ Entregado' : '⏳ Pendiente'}
-                    </td>
-                    <td data-label="Observación">{r.observacion || '—'}</td>
-                    <td data-label="Acciones" className="actions">
-                      {r.estado !== 'E' && (
-                        <button className="btn-lila" onClick={() => entregar(r)}>Entregar</button>
-                      )}
-                      <button className="btn-edit" onClick={() => editar(r)}>Editar</button>
-                      <button className="btn-del" onClick={() => eliminar(r)}>Eliminar</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {fechaFiltro && (
+        <div className="card">
+          <h2>📋 Listado de entregas ({filtrados.length})</h2>
+          <div className="btn-grupo-reportes">
+            <button type="button" className="btn-reporte btn-reporte-lapaz" onClick={imprimirReporte}>
+              📄 Reporte Entregas La Paz / El Alto
+            </button>
+            <button type="button" className="btn-reporte btn-reporte-interior" onClick={imprimirReporteInterior}>
+              🌎 Reporte Entregas al Interior
+            </button>
           </div>
-        )}
-        <Paginacion total={filtrados.length} pagina={pagina} setPagina={setPagina} porPagina={POR_PAGINA} />
-      </div>
+          {cargando ? (
+            <p className="empty">Cargando entregas...</p>
+          ) : filtrados.length === 0 ? (
+            <p className="empty">No hay entregas para los filtros seleccionados.</p>
+          ) : (
+            <div className="tabla">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Celular</th>
+                    <th>Lugar donde recogerá</th>
+                    <th>Lugar del pedido</th>
+                    <th>Destino</th>
+                    <th>Estado</th>
+                    <th>Observación</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginados.map((r) => (
+                    <tr key={r.id} className={r.estado === 'E' ? 'estado-E' : 'estado-P'}>
+                      <td data-label="Fecha">{r.fecha_entrega || '—'}</td>
+                      <td data-label="Cliente">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span>{r.cliente_nombre}</span>
+                          {(r.tipo === 'INT' || r.destino) && (
+                            <span style={{ fontSize: 10, background: '#ccfbf1', color: '#0f766e', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
+                              INTERIOR
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td data-label="Celular">{r.cliente_celular || '—'}</td>
+                      <td data-label="Lugar donde recogerá">{textoRecogida(r) || (r.tipo === 'INT' ? '—' : '—')}</td>
+                      <td data-label="Lugar del pedido">{r.lugar_texto}</td>
+                      <td data-label="Destino">{r.destino ? <strong>{r.destino}</strong> : '—'}</td>
+                      <td data-label="Estado">
+                        {r.estado === 'E' ? '✅ Entregado' : '⏳ Pendiente'}
+                      </td>
+                      <td data-label="Observación">{r.observacion || '—'}</td>
+                      <td data-label="Acciones" className="actions">
+                        {r.estado !== 'E' && (
+                          <button className="btn-lila" onClick={() => entregar(r)}>Entregar</button>
+                        )}
+                        <button className="btn-edit" onClick={() => editar(r)}>Editar</button>
+                        <button className="btn-del" onClick={() => eliminar(r)}>Eliminar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <Paginacion total={filtrados.length} pagina={pagina} setPagina={setPagina} porPagina={POR_PAGINA} />
+        </div>
+      )}
     </>
   );
 }

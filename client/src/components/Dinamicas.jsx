@@ -64,6 +64,167 @@ const eliminarEstadoEntregadoLocal = (id) => {
   } catch {}
 };
 
+const extraerNumerosDeRegistro = (rec) => {
+  if (!rec) return [];
+  const nums = [];
+  if (rec.n_ticket && String(rec.n_ticket).trim()) {
+    const partes = String(rec.n_ticket).split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean);
+    partes.forEach((p) => {
+      if (p.includes('-')) {
+        const trozos = p.split('-').map(Number);
+        if (trozos.length === 2 && !isNaN(trozos[0]) && !isNaN(trozos[1]) && trozos[1] >= trozos[0]) {
+          for (let n = trozos[0]; n <= trozos[1]; n++) nums.push(n);
+          return;
+        }
+      }
+      const num = Number(p);
+      if (!isNaN(num)) nums.push(num);
+    });
+  } else if (rec.numero_desde != null && rec.numero_hasta != null) {
+    const a = Number(rec.numero_desde);
+    const b = Number(rec.numero_hasta);
+    if (!isNaN(a) && !isNaN(b) && b >= a) {
+      for (let n = a; n <= b; n++) nums.push(n);
+    }
+  }
+  return [...new Set(nums)].sort((a, b) => a - b);
+};
+
+const formatearListaTickets = (numeros) => {
+  const nums = [...new Set((numeros || []).map(Number).filter((n) => !isNaN(n)))].sort((a, b) => a - b);
+  if (!nums.length) return '';
+  const rangos = [];
+  let inicio = nums[0];
+  let fin = nums[0];
+  for (let i = 1; i < nums.length; i++) {
+    if (nums[i] === fin + 1) {
+      fin = nums[i];
+    } else {
+      rangos.push(inicio === fin ? String(inicio) : `${inicio}-${fin}`);
+      inicio = nums[i];
+      fin = nums[i];
+    }
+  }
+  rangos.push(inicio === fin ? String(inicio) : `${inicio}-${fin}`);
+  return rangos.join(', ');
+};
+
+const coincideTicket = (x, q) => {
+  if (!q) return true;
+  const qClean = String(q).trim();
+  if (!qClean) return true;
+
+  const num = parseInt(qClean, 10);
+  const esNum = !isNaN(num);
+
+  // 1. Por rango directo en columnas numero_desde / numero_hasta
+  if (esNum && x.numero_desde != null && x.numero_hasta != null) {
+    const d = Number(x.numero_desde);
+    const h = Number(x.numero_hasta);
+    if (!isNaN(d) && !isNaN(h) && num >= d && num <= h) {
+      return true;
+    }
+  }
+
+  // 2. Por coincidencia exacta de número o token en n_ticket
+  if (x.n_ticket) {
+    const str = String(x.n_ticket).trim();
+    const tokens = str.split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean);
+    for (const t of tokens) {
+      if (t.toLowerCase() === qClean.toLowerCase()) return true;
+      if (esNum && parseInt(t, 10) === num) return true;
+      if (esNum && t.includes('-')) {
+        const partes = t.split('-');
+        if (partes.length === 2) {
+          const rIni = parseInt(partes[0].trim(), 10);
+          const rFin = parseInt(partes[1].trim(), 10);
+          if (!isNaN(rIni) && !isNaN(rFin) && num >= rIni && num <= rFin) return true;
+        }
+      }
+    }
+  }
+
+  return false;
+};
+
+const desglosarTickets = (items) => {
+  const res = [];
+  (items || []).forEach((x) => {
+    const celular = x.celular_cliente || '';
+    const cliente = x.nombre_completo || '';
+    const dinamica = x.dinamica_nombre || '';
+    const fecha = x.fecha_compra || '';
+    const estado = x.ticket_entregado || 'Pendiente';
+
+    // 1. Usar n_ticket como fuente principal (lo que se ve en la lista)
+    if (x.n_ticket && String(x.n_ticket).trim()) {
+      const partes = String(x.n_ticket).split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean);
+      partes.forEach((p) => {
+        if (p.includes('-')) {
+          const trozos = p.split('-');
+          if (trozos.length === 2) {
+            const ini = parseInt(trozos[0].trim(), 10);
+            const fin = parseInt(trozos[1].trim(), 10);
+            if (!isNaN(ini) && !isNaN(fin) && fin >= ini) {
+              for (let n = ini; n <= fin; n++) {
+                res.push({
+                  id: x.id,
+                  numero: n,
+                  numeroTexto: String(n).padStart(3, '0'),
+                  celular,
+                  cliente,
+                  dinamica,
+                  fecha,
+                  ticket_entregado: estado
+                });
+              }
+              return;
+            }
+          }
+        }
+        const num = parseInt(p, 10);
+        res.push({
+          id: x.id,
+          numero: isNaN(num) ? 0 : num,
+          numeroTexto: isNaN(num) ? p : String(num).padStart(3, '0'),
+          celular,
+          cliente,
+          dinamica,
+          fecha,
+          ticket_entregado: estado
+        });
+      });
+      return;
+    }
+
+    // 2. Solo si n_ticket no está presente, usar numero_desde y numero_hasta
+    const tieneRango = x.numero_desde !== null && x.numero_desde !== undefined && x.numero_desde !== '' &&
+                       x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
+    if (tieneRango) {
+      const d = Number(x.numero_desde);
+      const h = Number(x.numero_hasta);
+      if (!isNaN(d) && !isNaN(h) && h >= d) {
+        for (let n = d; n <= h; n++) {
+          res.push({
+            id: x.id,
+            numero: n,
+            numeroTexto: String(n).padStart(3, '0'),
+            celular,
+            cliente,
+            dinamica,
+            fecha,
+            ticket_entregado: estado
+          });
+        }
+        return;
+      }
+    }
+  });
+
+  res.sort((a, b) => a.numero - b.numero);
+  return res;
+};
+
 export default function Dinamicas({ avisar }) {
   const [lista, setLista] = useState([]);
   const [valores, setValores] = useState([]);
@@ -90,7 +251,150 @@ export default function Dinamicas({ avisar }) {
   const [verFiltroPdf, setVerFiltroPdf] = useState(false);
   const [pdfDesde, setPdfDesde] = useState('');
   const [pdfHasta, setPdfHasta] = useState('');
+  const [modalCambioCliente, setModalCambioCliente] = useState(false);
+  const [ticketACambiar, setTicketACambiar] = useState('');
+  const [registroCambioCliente, setRegistroCambioCliente] = useState(null);
+  const [modoDivision, setModoDivision] = useState('solo_este');
+  const [nuevoClienteId, setNuevoClienteId] = useState('');
+  const [nuevoClienteCelular, setNuevoClienteCelular] = useState('');
+  const [nuevoClienteNombre, setNuevoClienteNombre] = useState('');
+  const [guardandoCambioCliente, setGuardandoCambioCliente] = useState(false);
   const POR_PAGINA = 10;
+
+  const abrirModalCambioCliente = (ticketNumero = null, registroDirecto = null) => {
+    let reg = registroDirecto;
+    let tNum = ticketNumero ? String(ticketNumero).trim() : '';
+
+    if (!reg && tNum) {
+      reg = lista.find((x) => coincideTicket(x, tNum)) || null;
+    } else if (reg && !tNum) {
+      const nums = extraerNumerosDeRegistro(reg);
+      tNum = nums.length > 0 ? String(nums[0]) : '';
+    }
+
+    setTicketACambiar(tNum);
+    setRegistroCambioCliente(reg);
+    setModoDivision('solo_este');
+    setNuevoClienteId('');
+    setNuevoClienteCelular('');
+    setNuevoClienteNombre('');
+    setModalCambioCliente(true);
+  };
+
+  const cerrarModalCambioCliente = () => {
+    setModalCambioCliente(false);
+    setTicketACambiar('');
+    setRegistroCambioCliente(null);
+    setNuevoClienteId('');
+    setNuevoClienteCelular('');
+    setNuevoClienteNombre('');
+    setGuardandoCambioCliente(false);
+  };
+
+  const alCambiarTicketInput = (valor) => {
+    setTicketACambiar(valor);
+    const valLimpio = String(valor || '').trim();
+    if (!valLimpio) {
+      setRegistroCambioCliente(null);
+      return;
+    }
+    const reg = lista.find((x) => coincideTicket(x, valLimpio)) || null;
+    setRegistroCambioCliente(reg);
+  };
+
+  const ejecutarCambioCliente = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!ticketACambiar || !registroCambioCliente) {
+      avisar('error', 'Debes elegir un número de ticket válido que exista en las dinámicas.');
+      return;
+    }
+    const nuevoNom = String(nuevoClienteNombre || '').trim();
+    const nuevoCel = String(nuevoClienteCelular || '').trim();
+    if (!nuevoNom || !nuevoCel) {
+      avisar('error', 'Debes ingresar el celular y nombre completo del nuevo cliente.');
+      return;
+    }
+
+    const celLimpio = soloDigitos(nuevoCel);
+    const celActualLimpio = soloDigitos(registroCambioCliente.celular_cliente);
+    if (celLimpio && celLimpio === celActualLimpio && nuevoNom.toLowerCase() === String(registroCambioCliente.nombre_completo || '').trim().toLowerCase()) {
+      avisar('error', 'El nuevo cliente ingresado es el mismo que el dueño actual de este ticket.');
+      return;
+    }
+
+    setGuardandoCambioCliente(true);
+    try {
+      const numsDelReg = extraerNumerosDeRegistro(registroCambioCliente);
+      const numT = Number(ticketACambiar);
+
+      if (numsDelReg.length > 1 && modoDivision === 'solo_este' && !isNaN(numT) && numsDelReg.includes(numT)) {
+        // Separar solo este ticket del registro original
+        const restantes = numsDelReg.filter((n) => n !== numT);
+        const montoTotal = Number(registroCambioCliente.monto_compra || 0);
+        const montoPorBoleto = montoTotal > 0 ? montoTotal / numsDelReg.length : MONTO_POR_TICKET;
+        const montoRestante = Math.round(montoPorBoleto * restantes.length * 100) / 100;
+        const montoNuevo = Math.round(montoPorBoleto * 100) / 100;
+
+        // 1. Actualizar el registro original con los tickets que quedaron
+        await api.put('/api/dinamicas/' + registroCambioCliente.id, {
+          ...registroCambioCliente,
+          n_ticket: formatearListaTickets(restantes),
+          numero_desde: Math.min(...restantes),
+          numero_hasta: Math.max(...restantes),
+          monto_compra: montoRestante
+        });
+
+        // 2. Crear el nuevo registro con el ticket individual para el nuevo cliente
+        const respNuevo = await api.post('/api/dinamicas', {
+          nombre_completo: nuevoNom,
+          celular_cliente: nuevoCel,
+          monto_compra: montoNuevo,
+          n_ticket: String(numT),
+          numero_desde: numT,
+          numero_hasta: numT,
+          fecha_compra: registroCambioCliente.fecha_compra || hoy(),
+          dinamica_nombre: registroCambioCliente.dinamica_nombre,
+          valor_dinamica: registroCambioCliente.valor_dinamica,
+          ticket_entregado: registroCambioCliente.ticket_entregado || 'Pendiente'
+        });
+        if (respNuevo?.dinamica?.id) {
+          guardarEstadoEntregadoLocal(respNuevo.dinamica.id, registroCambioCliente.ticket_entregado || 'Pendiente');
+        }
+      } else {
+        // Transferir la compra/registro completo al nuevo cliente
+        await api.put('/api/dinamicas/' + registroCambioCliente.id, {
+          ...registroCambioCliente,
+          nombre_completo: nuevoNom,
+          celular_cliente: nuevoCel
+        });
+      }
+
+      // 3. Si el cliente no existe en la tabla de clientes, agregarlo automáticamente
+      const existeEnClientes = clientes.some((c) => soloDigitos(c.celular) === celLimpio);
+      if (!existeEnClientes && celLimpio) {
+        try {
+          const { nombre, apellido_paterno, apellido_materno } = parsearNombreParaCliente(nuevoNom);
+          await api.post('/api/clientes', {
+            nombre,
+            apellido_paterno,
+            apellido_materno,
+            celular: nuevoCel
+          });
+        } catch (errCli) {
+          console.warn('Registro automático en clientes:', errCli.message);
+        }
+      }
+
+      avisar('exito', `Ticket #${ticketACambiar} transferido exitosamente a ${nuevoNom}.`);
+      cerrarModalCambioCliente();
+      await cargar();
+      await cargarClientes();
+    } catch (err) {
+      avisar('error', err.message);
+    } finally {
+      setGuardandoCambioCliente(false);
+    }
+  };
 
   const cargar = async () => {
     try {
@@ -549,47 +853,6 @@ export default function Dinamicas({ avisar }) {
     }
   };
 
-  const coincideTicket = (x, q) => {
-    if (!q) return true;
-    const qClean = q.trim();
-    if (!qClean) return true;
-
-    const num = parseInt(qClean, 10);
-    const esNum = !isNaN(num);
-
-    // 1. Por rango directo en columnas numero_desde / numero_hasta
-    if (esNum && x.numero_desde != null && x.numero_hasta != null) {
-      const d = Number(x.numero_desde);
-      const h = Number(x.numero_hasta);
-      if (!isNaN(d) && !isNaN(h) && num >= d && num <= h) {
-        return true;
-      }
-    }
-
-    // 2. Por coincidencia exacta de número o token en n_ticket
-    if (x.n_ticket) {
-      const str = String(x.n_ticket).trim();
-      const tokens = str.split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean);
-      for (const t of tokens) {
-        // Coincidencia exacta de texto (ej: "005" con "005")
-        if (t.toLowerCase() === qClean.toLowerCase()) return true;
-        // Coincidencia numérica exacta (ej: 5 con 5, o "005" con 5)
-        if (esNum && parseInt(t, 10) === num) return true;
-        // Rango dentro del ticket tipo "10-15"
-        if (esNum && t.includes('-')) {
-          const partes = t.split('-');
-          if (partes.length === 2) {
-            const rIni = parseInt(partes[0].trim(), 10);
-            const rFin = parseInt(partes[1].trim(), 10);
-            if (!isNaN(rIni) && !isNaN(rFin) && num >= rIni && num <= rFin) return true;
-          }
-        }
-      }
-    }
-
-    return false;
-  };
-
   const normalizarTelefono = (tel) => String(tel || '').replace(/[^0-9]/g, '');
 
   const coincidenciasTicket = busquedaTicket.trim()
@@ -613,84 +876,6 @@ export default function Dinamicas({ avisar }) {
     : (tieneFiltroCelular ? coincidenciasCelular : lista);
 
   const paginados = visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
-
-  const desglosarTickets = (items) => {
-    const res = [];
-    (items || []).forEach((x) => {
-      const celular = x.celular_cliente || '';
-      const cliente = x.nombre_completo || '';
-      const dinamica = x.dinamica_nombre || '';
-      const fecha = x.fecha_compra || '';
-      const estado = x.ticket_entregado || 'Pendiente';
-
-      // 1. Usar n_ticket como fuente principal (lo que se ve en la lista)
-      if (x.n_ticket && String(x.n_ticket).trim()) {
-        const partes = String(x.n_ticket).split(/[,;\s]+/).map((t) => t.trim()).filter(Boolean);
-        partes.forEach((p) => {
-          if (p.includes('-')) {
-            const trozos = p.split('-');
-            if (trozos.length === 2) {
-              const ini = parseInt(trozos[0].trim(), 10);
-              const fin = parseInt(trozos[1].trim(), 10);
-              if (!isNaN(ini) && !isNaN(fin) && fin >= ini) {
-                for (let n = ini; n <= fin; n++) {
-                  res.push({
-                    id: x.id,
-                    numero: n,
-                    numeroTexto: String(n).padStart(3, '0'),
-                    celular,
-                    cliente,
-                    dinamica,
-                    fecha,
-                    ticket_entregado: estado
-                  });
-                }
-                return;
-              }
-            }
-          }
-          const num = parseInt(p, 10);
-          res.push({
-            id: x.id,
-            numero: isNaN(num) ? 0 : num,
-            numeroTexto: isNaN(num) ? p : String(num).padStart(3, '0'),
-            celular,
-            cliente,
-            dinamica,
-            fecha,
-            ticket_entregado: estado
-          });
-        });
-        return;
-      }
-
-      // 2. Solo si n_ticket no está presente, usar numero_desde y numero_hasta
-      const tieneRango = x.numero_desde !== null && x.numero_desde !== undefined && x.numero_desde !== '' &&
-                         x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
-      if (tieneRango) {
-        const d = Number(x.numero_desde);
-        const h = Number(x.numero_hasta);
-        if (!isNaN(d) && !isNaN(h) && h >= d) {
-          for (let n = d; n <= h; n++) {
-            res.push({
-              id: x.id,
-              numero: n,
-              numeroTexto: String(n).padStart(3, '0'),
-              celular,
-              cliente,
-              dinamica,
-              fecha,
-              ticket_entregado: estado
-            });
-          }
-          return;
-        }
-      }
-    });
-
-    res.sort((a, b) => a.numero - b.numero);
-    return res;
-  };
 
   const comprasPorFecha = (() => {
     if (modoBusqueda !== 'celular' || !busquedaCelular.trim() || coincidenciasCelular.length === 0) {
@@ -1190,6 +1375,29 @@ export default function Dinamicas({ avisar }) {
           </button>
           <button
             type="button"
+            onClick={() => abrirModalCambioCliente()}
+            disabled={lista.length === 0}
+            style={{
+              background: '#8b5cf6',
+              color: '#ffffff',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: lista.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: lista.length === 0 ? 0.6 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 8px rgba(139, 92, 246, 0.35)'
+            }}
+            title="Elegir un número de ticket para cambiar o reasignar de cliente"
+          >
+            🔄 Cambiar Cliente por N° de Ticket
+          </button>
+          <button
+            type="button"
             onClick={() => setVerRuleta(true)}
             disabled={lista.length === 0}
             style={{
@@ -1635,6 +1843,21 @@ export default function Dinamicas({ avisar }) {
                                 </button>
                               </div>
                             </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4b5563', fontWeight: 700 }}>👤 REASIGNAR</div>
+                              <div style={{ marginTop: 2 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => abrirModalCambioCliente(busquedaTicket.trim(), c)}
+                                  className="btn-lila"
+                                  style={{ padding: '4px 10px', fontSize: 12, minHeight: 'auto', borderRadius: 14 }}
+                                  title="Cambiar el cliente dueño de este ticket"
+                                >
+                                  🔄 Cambiar Cliente
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1930,6 +2153,14 @@ export default function Dinamicas({ avisar }) {
                         </button>
                       </td>
                       <td data-label="Acciones" className="actions">
+                        <button
+                          className="btn-lila"
+                          onClick={() => abrirModalCambioCliente(null, x)}
+                          style={{ padding: '6px 10px', fontSize: 12 }}
+                          title="Cambiar de cliente para los tickets de este registro"
+                        >
+                          🔄 Cambiar Cliente
+                        </button>
                         <button className="btn-edit" onClick={() => editar(x)}>Editar</button>
                         <button className="btn-del" onClick={() => eliminar(x)}>Eliminar</button>
                       </td>
@@ -1952,6 +2183,271 @@ export default function Dinamicas({ avisar }) {
           desglosarTickets={desglosarTickets}
           onCambiarEstadoTicket={cambiarEstadoTicket}
         />
+      )}
+
+      {modalCambioCliente && (
+        <div className="modal-fondo" onClick={cerrarModalCambioCliente}>
+          <div className="modal-entrega" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
+            <div className="modal-entrega-cabecera">
+              <div>
+                <h2>🔄 Cambiar Cliente por N° de Ticket</h2>
+                <p className="sub">Transfiere o reasigna un número de ticket a un cliente diferente.</p>
+              </div>
+              <button
+                type="button"
+                className="modal-entrega-cerrar"
+                onClick={cerrarModalCambioCliente}
+                title="Cerrar ventana"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-entrega-cuerpo">
+              <form onSubmit={ejecutarCambioCliente}>
+                {/* PASO 1: ELEGIR TICKET */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontWeight: 800, fontSize: 13, color: '#0f172a', marginBottom: 4, display: 'block' }}>
+                    🎟️ N° de Ticket a transferir
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Ej: 5, 23, 100..."
+                      value={ticketACambiar}
+                      onChange={(e) => alCambiarTicketInput(e.target.value)}
+                      style={{ flex: 1, fontSize: 15 }}
+                      required
+                      autoFocus
+                    />
+                    {ticketACambiar && (
+                      <button
+                        type="button"
+                        className="btn-secundario"
+                        onClick={() => alCambiarTicketInput('')}
+                        style={{ padding: '0 12px', fontSize: 13 }}
+                      >
+                        ✕ Limpiar
+                      </button>
+                    )}
+                  </div>
+
+                  {/* SELECT RÁPIDO DE TODOS LOS TICKETS REGISTRADOS */}
+                  <div style={{ marginTop: 8 }}>
+                    <select
+                      value={ticketACambiar}
+                      onChange={(e) => alCambiarTicketInput(e.target.value)}
+                      style={{ fontSize: 13 }}
+                    >
+                      <option value="">-- O selecciona de la lista de tickets registrados ({desglosarTickets(lista).length}) --</option>
+                      {desglosarTickets(lista).map((t) => (
+                        <option key={`${t.id}-${t.numero}`} value={t.numero}>
+                          Ticket #{t.numero} — {t.cliente} ({t.dinamica || 'Sin dinámica'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* INFO DEL TICKET ENCONTRADO O ERROR */}
+                {ticketACambiar && (
+                  registroCambioCliente ? (
+                    <div style={{
+                      background: '#f8fafc',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 10,
+                      padding: 12,
+                      marginBottom: 16
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#166534', background: '#dcfce7', padding: '2px 8px', borderRadius: 4 }}>
+                          ✓ Ticket #{ticketACambiar} Encontrado
+                        </span>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>
+                          🎯 {registroCambioCliente.dinamica_nombre || 'Dinámica'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, fontSize: 13 }}>
+                        <div>
+                          <small style={{ color: '#64748b', fontSize: 11, display: 'block', fontWeight: 700 }}>CLIENTE ACTUAL</small>
+                          <strong style={{ color: '#0f172a' }}>👤 {registroCambioCliente.nombre_completo}</strong>
+                        </div>
+                        <div>
+                          <small style={{ color: '#64748b', fontSize: 11, display: 'block', fontWeight: 700 }}>CELULAR</small>
+                          <strong style={{ color: '#1d4ed8' }}>📱 {registroCambioCliente.celular_cliente}</strong>
+                        </div>
+                        <div>
+                          <small style={{ color: '#64748b', fontSize: 11, display: 'block', fontWeight: 700 }}>TICKETS DEL REGISTRO</small>
+                          <strong style={{ color: '#047857' }}>🎟️ {registroCambioCliente.n_ticket || `#${ticketACambiar}`}</strong>
+                        </div>
+                        <div>
+                          <small style={{ color: '#64748b', fontSize: 11, display: 'block', fontWeight: 700 }}>MONTO / FECHA</small>
+                          <span>Bs {Number(registroCambioCliente.monto_compra || 0).toFixed(2)} · {registroCambioCliente.fecha_compra || '—'}</span>
+                        </div>
+                      </div>
+
+                      {extraerNumerosDeRegistro(registroCambioCliente).length > 1 && (
+                        <div style={{
+                          marginTop: 10,
+                          padding: '10px 12px',
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          borderRadius: 8
+                        }}>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: '#92400e', marginBottom: 6 }}>
+                            ⚠️ Este registro incluye varios tickets: <strong>{registroCambioCliente.n_ticket}</strong>.
+                          </div>
+                          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer', marginBottom: 6 }}>
+                            <input
+                              type="radio"
+                              name="modoDivision"
+                              value="solo_este"
+                              checked={modoDivision === 'solo_este'}
+                              onChange={() => setModoDivision('solo_este')}
+                              style={{ marginTop: 2 }}
+                            />
+                            <span>
+                              <strong>Transferir solo el ticket #{ticketACambiar}</strong>
+                              <small style={{ display: 'block', color: '#64748b' }}>
+                                Se separa este boleto para el nuevo cliente. Los demás tickets se quedan con {registroCambioCliente.nombre_completo}.
+                              </small>
+                            </span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                            <input
+                              type="radio"
+                              name="modoDivision"
+                              value="todo_el_registro"
+                              checked={modoDivision === 'todo_el_registro'}
+                              onChange={() => setModoDivision('todo_el_registro')}
+                              style={{ marginTop: 2 }}
+                            />
+                            <span>
+                              <strong>Transferir TODOS los tickets ({registroCambioCliente.n_ticket})</strong>
+                              <small style={{ display: 'block', color: '#64748b' }}>
+                                Transfiere la compra completa al nuevo cliente.
+                              </small>
+                            </span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: '#fef2f2',
+                      border: '1px solid #fca5a5',
+                      borderRadius: 8,
+                      padding: 10,
+                      color: '#991b1b',
+                      fontSize: 13,
+                      marginBottom: 16
+                    }}>
+                      ❌ No se encontró ningún cliente registrado con el ticket <strong>#{ticketACambiar}</strong>.
+                    </div>
+                  )
+                )}
+
+                {/* PASO 2: DATOS DEL NUEVO CLIENTE */}
+                <div style={{
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 10,
+                  padding: 14,
+                  marginBottom: 16
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#166534', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>👥</span> Datos del Nuevo Cliente
+                  </div>
+
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: '#166534', marginBottom: 4, display: 'block' }}>
+                      Elegir de clientes registrados (opcional):
+                    </label>
+                    <select
+                      value={nuevoClienteId}
+                      onChange={(e) => {
+                        const idSel = e.target.value;
+                        setNuevoClienteId(idSel);
+                        const c = clientes.find((x) => String(x.id) === String(idSel));
+                        if (c) {
+                          setNuevoClienteNombre(nombreDesdeCliente(c));
+                          setNuevoClienteCelular(c.celular || '');
+                        }
+                      }}
+                      style={{ fontSize: 13 }}
+                    >
+                      <option value="">-- Seleccionar cliente existente o escribir abajo --</option>
+                      {clientes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {nombreDesdeCliente(c)} {c.celular ? `(📱 ${c.celular})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: '#166534', marginBottom: 4, display: 'block' }}>
+                        📱 Celular del Nuevo Cliente *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej: 77712345"
+                        value={nuevoClienteCelular}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setNuevoClienteCelular(v);
+                          const celClean = soloDigitos(v);
+                          if (celClean) {
+                            const c = clientes.find((x) => soloDigitos(x.celular) === celClean);
+                            if (c) {
+                              setNuevoClienteNombre(nombreDesdeCliente(c));
+                              setNuevoClienteId(String(c.id));
+                            }
+                          }
+                        }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: '#166534', marginBottom: 4, display: 'block' }}>
+                        👤 Nombre Completo del Nuevo Cliente *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej: María Flores"
+                        value={nuevoClienteNombre}
+                        onChange={(e) => setNuevoClienteNombre(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* BOTONES DE ACCIÓN */}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-secundario"
+                    onClick={cerrarModalCambioCliente}
+                    disabled={guardandoCambioCliente}
+                  >
+                    ✕ Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={guardandoCambioCliente || !ticketACambiar || !registroCambioCliente || !nuevoClienteNombre.trim() || !nuevoClienteCelular.trim()}
+                    style={{ minWidth: 160 }}
+                  >
+                    {guardandoCambioCliente ? 'Guardando...' : '💾 Confirmar Cambio'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
