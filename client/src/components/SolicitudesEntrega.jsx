@@ -199,14 +199,9 @@ export default function SolicitudesEntrega({ avisar }) {
   const cambiar = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const abrirFormulario = (tipo) => {
-    if (mostrarFormulario && form.tipo === tipo && !form.id) {
-      setMostrarFormulario(false);
-      return;
-    }
     setForm(formVacio(tipo));
     setClienteTexto('');
     setMostrarFormulario(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cargarUbicacionCliente = async (cliente) => {
@@ -329,7 +324,6 @@ export default function SolicitudesEntrega({ avisar }) {
       estado: r.estado || 'P',
       observacion: r.observacion || ''
     });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelar = () => {
@@ -713,8 +707,33 @@ export default function SolicitudesEntrega({ avisar }) {
       <div className="card">
         <h2>🚚 Registro de Entregas</h2>
         <p className="hint">
-          Filtra por fecha o día y crea el listado de entregas indicando el cliente, el lugar donde se encuentra el pedido y el lugar donde lo recogerá.
+          Crea entregas para La Paz o el interior del país, o filtra el listado existente por fecha, estado y lugar.
         </p>
+
+        <div className="btn-grupo-entregas" style={{ marginTop: 10, marginBottom: 16 }}>
+          <button
+            type="button"
+            className="btn-modo-entrega lp-inactivo"
+            onClick={() => abrirFormulario('LP')}
+          >
+            <span className="btn-ico">🏙️</span>
+            <span className="btn-txt">
+              <strong>Registrar Entregas</strong>
+              <small>La Paz y El Alto</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="btn-modo-entrega int-inactivo"
+            onClick={() => abrirFormulario('INT')}
+          >
+            <span className="btn-ico">🌎</span>
+            <span className="btn-txt">
+              <strong>Entregas Interior</strong>
+              <small>Departamentos de Bolivia</small>
+            </span>
+          </button>
+        </div>
 
         <form className="filtros-entregas-grid" onSubmit={(e) => e.preventDefault()}>
           <div>
@@ -757,189 +776,175 @@ export default function SolicitudesEntrega({ avisar }) {
           <div className="resumen-item"><span>Pendientes</span><strong>{pendientes}</strong></div>
           <div className="resumen-item"><span>Entregadas</span><strong>{entregadas}</strong></div>
         </div>
-
-        <div className="btn-grupo-entregas">
-          <button
-            type="button"
-            className={`btn-modo-entrega ${mostrarFormulario && form.tipo === 'LP' ? 'lp-activo' : 'lp-inactivo'}`}
-            onClick={() => abrirFormulario('LP')}
-          >
-            <span className="btn-ico">🏙️</span>
-            <span className="btn-txt">
-              <strong>Registrar Entregas</strong>
-              <small>La Paz y El Alto</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`btn-modo-entrega ${mostrarFormulario && form.tipo === 'INT' ? 'int-activo' : 'int-inactivo'}`}
-            onClick={() => abrirFormulario('INT')}
-          >
-            <span className="btn-ico">🌎</span>
-            <span className="btn-txt">
-              <strong>Entregas Interior</strong>
-              <small>Departamentos de Bolivia</small>
-            </span>
-          </button>
-        </div>
       </div>
 
       {mostrarFormulario && (
-      <div className="card">
-        <h2>
-          {form.id
-            ? (form.tipo === 'INT' ? '✏️ Editar Entrega al Interior' : '✏️ Editar Entrega')
-            : (form.tipo === 'INT' ? '🌎 Entregas Interior' : '➕ Registrar Entregas')}
-        </h2>
-        {form.tipo === 'INT' && (
-          <p className="hint">
-            Registra la entrega al interior del país seleccionando la ciudad de destino.
-          </p>
-        )}
-        <form className="grid2" onSubmit={guardar}>
-          <div>
-            <label>Cliente registrado</label>
-            <input
-              list="clientes-registrados"
-              placeholder="Buscar por nombre o celular..."
-              value={clienteTexto}
-              onChange={cambiarClienteTexto}
-              autoComplete="off"
-            />
-            <datalist id="clientes-registrados">
-              {clientesOrdenados.map((c) => (
-                <option key={c.id} value={textoCliente(c)} />
-              ))}
-            </datalist>
-            <small className="hint">Escribe nombre o celular y elige de la lista.</small>
-          </div>
-          <div>
-            <label>Nombre del cliente *</label>
-            <input
-              name="cliente_nombre"
-              placeholder="Ej: Juan Pérez"
-              value={form.cliente_nombre}
-              onChange={cambiar}
-              required
-            />
-          </div>
-          <div>
-            <label>Celular</label>
-            <input
-              name="cliente_celular"
-              placeholder="Ej: 77712345"
-              value={form.cliente_celular}
-              onChange={cambiar}
-            />
-          </div>
-          {form.tipo === 'INT' ? (
-            <div>
-              <label>Destino (Ciudad) *</label>
-              <input
-                name="destino"
-                list="destinos-interior"
-                placeholder="Elige o escribe la ciudad de destino"
-                value={form.destino}
-                onChange={cambiar}
-                required
-              />
-              <datalist id="destinos-interior">
-                {destinosLista.map((destino) => (
-                  <option key={destino} value={destino} />
-                ))}
-              </datalist>
-              <small className="hint">Selecciona una ciudad de la lista o escribe una nueva.</small>
-            </div>
-          ) : (
-            <div>
-              <label>Lugar donde recogerá *</label>
-              <select name="lugar_entrega_id" value={form.lugar_entrega_id} onChange={cambiar} required>
-                <option value="">— Selecciona un lugar del listado —</option>
-                {lugares.map((l) => (
-                  <option key={l.id} value={l.id}>{textoLugar(l)}</option>
-                ))}
-              </select>
-              {lugares.length === 0 && (
-                <small className="hint">
-                  No hay lugares registrados. Agrégalos en Configuración → Lugares de Entrega.
-                </small>
-              )}
-            </div>
-          )}
-          <div className="full">
-            <label>Lugar donde se encuentra el pedido *</label>
-            <input
-              name="lugar_texto"
-              placeholder={buscandoUbicacion ? 'Buscando ubicación del producto...' : 'Se completa al seleccionar el cliente'}
-              value={form.lugar_texto}
-              onChange={cambiar}
-              required
-            />
-            <small className="hint">
-              {buscandoUbicacion
-                ? 'Buscando la ubicación del producto del cliente...'
-                : 'Se completa automáticamente con la ubicación del producto al seleccionar el cliente.'}
-            </small>
-          </div>
-          <div>
-            <label>Fecha de entrega</label>
-            <input
-              type="date"
-              name="fecha_entrega"
-              value={form.fecha_entrega}
-              onChange={cambiar}
-              required
-            />
-          </div>
-          <div>
-            <label>Estado</label>
-            <select name="estado" value={form.estado} onChange={cambiar}>
-              <option value="P">⏳ Pendiente</option>
-              <option value="E">✅ Entregado</option>
-            </select>
-          </div>
-          <div className="full">
-            <label>Observación / detalle del pedido</label>
-            <input
-              name="observacion"
-              placeholder="Ej: 2 prendas, llamar antes de entregar"
-              value={form.observacion}
-              onChange={cambiar}
-            />
-          </div>
-          <div className="full form-acciones-responsive">
-            <button
-              type="submit"
-              className={`btn-submit-entrega ${form.id ? 'btn-submit-edit' : (form.tipo === 'INT' ? 'btn-submit-int' : 'btn-submit-lp')}`}
-              disabled={guardando}
-            >
-              {guardando
-                ? 'Guardando...'
-                : (form.id
-                  ? '💾 Guardar cambios'
-                  : (form.tipo === 'INT' ? '🌎 Agregar Entrega Interior' : '➕ Agregar al listado'))}
-            </button>
-            {form.id && (
+        <div className="modal-fondo" onClick={() => { cancelar(); setMostrarFormulario(false); }}>
+          <div className="modal-entrega" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-entrega-cabecera">
+              <div>
+                <h2>
+                  {form.id
+                    ? (form.tipo === 'INT' ? '✏️ Editar Entrega al Interior' : '✏️ Editar Entrega')
+                    : (form.tipo === 'INT' ? '🌎 Nueva Entrega al Interior' : '🏙️ Registrar Entrega La Paz')}
+                </h2>
+                <p className="sub">
+                  {form.tipo === 'INT'
+                    ? 'Registro de despacho y entrega a otros departamentos de Bolivia'
+                    : 'Registro de entrega local para La Paz y El Alto'}
+                </p>
+              </div>
               <button
                 type="button"
-                className="btn-cancelar"
+                className="modal-entrega-cerrar"
                 onClick={() => { cancelar(); setMostrarFormulario(false); }}
-                disabled={guardando}
+                title="Cerrar ventana"
               >
-                Cancelar
+                ✕
               </button>
-            )}
-            <button
-              type="button"
-              className="btn-cerrar"
-              onClick={() => { cancelar(); setMostrarFormulario(false); }}
-              disabled={guardando}
-            >
-              ✖ Cerrar
-            </button>
+            </div>
+
+            <div className="modal-entrega-cuerpo">
+              <form onSubmit={guardar}>
+                <div className="grid2">
+                  <div>
+                    <label>Cliente registrado</label>
+                    <input
+                      list="clientes-registrados"
+                      placeholder="Buscar por nombre o celular..."
+                      value={clienteTexto}
+                      onChange={cambiarClienteTexto}
+                      autoComplete="off"
+                    />
+                    <datalist id="clientes-registrados">
+                      {clientesOrdenados.map((c) => (
+                        <option key={c.id} value={textoCliente(c)} />
+                      ))}
+                    </datalist>
+                    <small className="hint">Escribe nombre o celular y elige de la lista.</small>
+                  </div>
+                  <div>
+                    <label>Nombre del cliente *</label>
+                    <input
+                      name="cliente_nombre"
+                      placeholder="Ej: Juan Pérez"
+                      value={form.cliente_nombre}
+                      onChange={cambiar}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label>Celular</label>
+                    <input
+                      name="cliente_celular"
+                      placeholder="Ej: 77712345"
+                      value={form.cliente_celular}
+                      onChange={cambiar}
+                    />
+                  </div>
+                  {form.tipo === 'INT' ? (
+                    <div>
+                      <label>Destino (Ciudad) *</label>
+                      <input
+                        name="destino"
+                        list="destinos-interior"
+                        placeholder="Elige o escribe la ciudad de destino"
+                        value={form.destino}
+                        onChange={cambiar}
+                        required
+                        autoFocus
+                      />
+                      <datalist id="destinos-interior">
+                        {destinosLista.map((destino) => (
+                          <option key={destino} value={destino} />
+                        ))}
+                      </datalist>
+                      <small className="hint">Selecciona una ciudad de la lista o escribe una nueva.</small>
+                    </div>
+                  ) : (
+                    <div>
+                      <label>Lugar donde recogerá *</label>
+                      <select name="lugar_entrega_id" value={form.lugar_entrega_id} onChange={cambiar} required>
+                        <option value="">— Selecciona un lugar del listado —</option>
+                        {lugares.map((l) => (
+                          <option key={l.id} value={l.id}>{textoLugar(l)}</option>
+                        ))}
+                      </select>
+                      {lugares.length === 0 && (
+                        <small className="hint">
+                          No hay lugares registrados. Agrégalos en Configuración → Lugares de Entrega.
+                        </small>
+                      )}
+                    </div>
+                  )}
+                  <div className="full">
+                    <label>Lugar donde se encuentra el pedido *</label>
+                    <input
+                      name="lugar_texto"
+                      placeholder={buscandoUbicacion ? 'Buscando ubicación del producto...' : 'Se completa al seleccionar el cliente'}
+                      value={form.lugar_texto}
+                      onChange={cambiar}
+                      required
+                    />
+                    <small className="hint">
+                      {buscandoUbicacion
+                        ? 'Buscando la ubicación del producto del cliente...'
+                        : 'Se completa automáticamente con la ubicación del producto al seleccionar el cliente.'}
+                    </small>
+                  </div>
+                  <div>
+                    <label>Fecha de entrega</label>
+                    <input
+                      type="date"
+                      name="fecha_entrega"
+                      value={form.fecha_entrega}
+                      onChange={cambiar}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label>Estado</label>
+                    <select name="estado" value={form.estado} onChange={cambiar}>
+                      <option value="P">⏳ Pendiente</option>
+                      <option value="E">✅ Entregado</option>
+                    </select>
+                  </div>
+                  <div className="full">
+                    <label>Observación / detalle del pedido</label>
+                    <input
+                      name="observacion"
+                      placeholder="Ej: 2 prendas, llamar antes de entregar"
+                      value={form.observacion}
+                      onChange={cambiar}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-acciones-responsive" style={{ marginTop: 18 }}>
+                  <button
+                    type="submit"
+                    className={`btn-submit-entrega ${form.id ? 'btn-submit-edit' : (form.tipo === 'INT' ? 'btn-submit-int' : 'btn-submit-lp')}`}
+                    disabled={guardando}
+                  >
+                    {guardando
+                      ? 'Guardando...'
+                      : (form.id
+                        ? '💾 Guardar cambios'
+                        : (form.tipo === 'INT' ? '🌎 Guardar Entrega Interior' : '➕ Guardar Entrega'))}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-cancelar"
+                    onClick={() => { cancelar(); setMostrarFormulario(false); }}
+                    disabled={guardando}
+                  >
+                    ✕ Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </form>
-      </div>
+        </div>
       )}
 
       <div className="card">
