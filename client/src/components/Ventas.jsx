@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Paginacion from './Paginacion.jsx';
-const ESTADOS = { P: 'Pendiente de Entrega', D: 'Deuda', E: 'Entregado' };
+const ESTADOS = { P: 'Pendiente de Entrega', D: 'Deuda', E: 'Entregado', S: 'Sin Vender' };
+
+const hoyISO = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
+const dinero = (n) => (Number(n) || 0).toFixed(2);
 
 const formVacio = {
   fecha_venta: '', precio_venta: '', deposito_cliente: '', celular_cliente: '',
@@ -25,6 +31,13 @@ export default function Ventas({ fardos, avisar }) {
   const [clientes, setClientes] = useState([]);
   const [clienteHint, setClienteHint] = useState('');
   const [ubicaciones, setUbicaciones] = useState([]);
+  const [pagosTabla, setPagosTabla] = useState(true);
+  const [pagoFecha, setPagoFecha] = useState(hoyISO());
+  const [pagoMonto, setPagoMonto] = useState('');
+  const [pagoNota, setPagoNota] = useState('');
+  const [guardandoPago, setGuardandoPago] = useState(false);
+  const [verImagenes, setVerImagenes] = useState(false);
+  const [verProducto, setVerProducto] = useState(null);
 
   useEffect(() => {
     api.get('/api/clientes').then((r) => setClientes(r.clientes)).catch(() => {});
@@ -32,16 +45,19 @@ export default function Ventas({ fardos, avisar }) {
   }, []);
 
   const cargar = async (id, silencioso = false) => {
-    if (!id) { setItems([]); return; }
+    if (!id) { setItems([]); return []; }
     if (!silencioso) setCargando(true);
     setFaltaTabla(false);
     try {
       const r = await api.get('/api/ventas?fardo_id=' + id);
       setItems(r.items);
+      setPagosTabla(r.pagosTabla !== false);
+      return r.items || [];
     } catch (err) {
       if (err.message.includes('ventas')) setFaltaTabla(true);
       else if (!silencioso) avisar('error', err.message);
       if (!silencioso) setItems([]);
+      return [];
     } finally {
       if (!silencioso) setCargando(false);
     }
@@ -65,6 +81,9 @@ export default function Ventas({ fardos, avisar }) {
     const esNuevo = !item.venta;
     setEditando(item);
     setClienteHint('');
+    setPagoFecha(hoyISO());
+    setPagoMonto('');
+    setPagoNota('');
     setForm({
       fecha_venta: v.fecha_venta || fechaVentaGlobal || '',
       // Al registrar: prellenar con el precio original del producto
@@ -122,10 +141,79 @@ export default function Ventas({ fardos, avisar }) {
   const guardar = async (e) => {
     e.preventDefault();
     try {
+      if (form.estado === 'S') {
+        if (!editando.venta) {
+          setEditando(null);
+          avisar('exito', 'El producto ya está Sin Vender.');
+          return;
+        }
+        const abonos = editando.venta.pagos || [];
+        const mensaje = abonos.length
+          ? 'Este producto tiene ' + abonos.length + ' abono(s) registrado(s). Al marcarlo como Sin Vender se eliminará la venta y también sus abonos. ¿Deseas continuar?'
+          : '¿Marcar este producto como Sin Vender? Se eliminará la venta registrada y el producto volverá a stock.';
+        if (!window.confirm(mensaje)) return;
+        await api.del('/api/ventas/producto/' + editando.id);
+        avisar('exito', 'Producto marcado como Sin Vender. Venta eliminada.');
+        setEditando(null);
+        cargar(fardoId);
+        return;
+      }
       await api.post('/api/ventas', { producto_id: editando.id, ...form });
       avisar('exito', 'Venta guardada.');
       setEditando(null);
       cargar(fardoId);
+    } catch (err) {
+      avisar('error', err.message);
+    }
+  };
+
+  const registrarAbono = async (e) => {
+    e.preventDefault();
+    const venta = editando && editando.venta;
+    if (!venta) return;
+    const montoNum = Number(pagoMonto);
+    const saldo = Number(venta.saldo || 0);
+    if (!Number.isFinite(montoNum) || montoNum <= 0) {
+      avisar('error', 'Ingresa un monto de abono válido.');
+      return;
+    }
+    if (montoNum > saldo + 0.005) {
+      avisar('error', 'El monto supera el saldo pendiente (Bs ' + dinero(saldo) + ').');
+      return;
+    }
+    setGuardandoPago(true);
+    try {
+      const r = await api.post('/api/pagos-venta', {
+        venta_id: venta.id,
+        fecha_pago: pagoFecha || hoyISO(),
+        monto: montoNum,
+        nota: pagoNota
+      });
+      setPagoMonto('');
+      setPagoNota('');
+      const lista = await cargar(fardoId, true);
+      const actualizado = (lista || []).find((x) => x.id === editando.id);
+      if (actualizado) setEditando(actualizado);
+      if (Number(r.saldo) <= 0) {
+        avisar('exito', 'Abono registrado. ¡Deuda saldada! Revisa el estado de la venta.');
+      } else {
+        avisar('exito', 'Abono registrado. Saldo pendiente: Bs ' + dinero(r.saldo));
+      }
+    } catch (err) {
+      avisar('error', err.message);
+    } finally {
+      setGuardandoPago(false);
+    }
+  };
+
+  const eliminarAbono = async (pago) => {
+    if (!window.confirm('¿Eliminar el abono de Bs ' + dinero(pago.monto) + ' del ' + pago.fecha_pago + '?')) return;
+    try {
+      await api.del('/api/pagos-venta/' + pago.id);
+      const lista = await cargar(fardoId, true);
+      const actualizado = (lista || []).find((x) => x.id === editando.id);
+      if (actualizado) setEditando(actualizado);
+      avisar('exito', 'Abono eliminado. Saldo actualizado.');
     } catch (err) {
       avisar('error', err.message);
     }
@@ -136,7 +224,13 @@ export default function Ventas({ fardos, avisar }) {
   const n = fNombre.trim().toLowerCase();
   const visibles = items.filter((p) => {
     if (t && !(String(p.correlativo).includes(t) || (p.nombre_foto || '').toLowerCase().includes(t))) return false;
-    if (fEstado && (p.venta?.estado || '') !== fEstado) return false;
+    if (fEstado) {
+      if (fEstado === 'S') {
+        if (p.venta) return false;
+      } else if ((p.venta?.estado || '') !== fEstado) {
+        return false;
+      }
+    }
     if (c && !((p.venta?.celular_cliente || '').toLowerCase().includes(c))) return false;
     if (n && !((p.venta?.nombre_cliente || '').toLowerCase().includes(n))) return false;
     return true;
@@ -153,7 +247,7 @@ export default function Ventas({ fardos, avisar }) {
   const fardoSel = fardos.find((f) => String(f.id) === String(fardoId));
 
   const exportarExcel = () => {
-    const cols = ['Código (correlativo-código fardo)', 'Fardo', 'Precio original', 'Fecha venta', 'Precio venta', 'Depósito', 'Celular', 'Cliente', 'Ciudad', 'F. entrega', 'Ubicación', 'Observación', 'Estado', 'Foto URL'];
+    const cols = ['Código (correlativo-código fardo)', 'Fardo', 'Precio original', 'Fecha venta', 'Precio venta', 'Depósito', 'Abonado', 'Saldo', 'Celular', 'Cliente', 'Ciudad', 'F. entrega', 'Ubicación', 'Observación', 'Estado', 'Foto URL'];
     const esc = (v) => {
       const s = v === null || v === undefined ? '' : String(v);
       return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -166,13 +260,15 @@ export default function Ventas({ fardos, avisar }) {
       p.venta?.fecha_venta || '',
       p.venta?.precio_venta ?? '',
       p.venta?.deposito_cliente ?? '',
+      p.venta ? dinero(p.venta.abonado) : '',
+      p.venta ? dinero(p.venta.saldo) : '',
       p.venta?.celular_cliente || '',
       p.venta?.nombre_cliente || '',
       p.venta?.ciudad || '',
       p.venta?.fecha_entrega || '',
       p.venta?.ubicacion || '',
       p.venta?.observacion || '',
-      p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin venta',
+      p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin Vender',
       p.foto_url || ''
     ]);
     const csv = '﻿' + [cols, ...filas].map((f) => f.map(esc).join(';')).join('\r\n');
@@ -188,7 +284,7 @@ export default function Ventas({ fardos, avisar }) {
   const exportarPDF = () => {
     const titulo = 'Reporte de ventas — ' + (fardoSel ? (fardoSel.codigo_fardo + ' — ' + fardoSel.nombre_fardo) : 'fardo');
     const fecha = new Date().toLocaleString();
-    const th = ['Código', 'Foto', 'Precio orig.', 'F. venta', 'Precio venta', 'Depósito', 'Celular', 'Cliente', 'Ciudad', 'F. entrega', 'Ubicación', 'Observación', 'Estado'];
+    const th = ['Código', 'Foto', 'Precio orig.', 'F. venta', 'Precio venta', 'Depósito', 'Abonado', 'Saldo', 'Celular', 'Cliente', 'Ciudad', 'F. entrega', 'Ubicación', 'Observación', 'Estado'];
     const escH = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const filas = [...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0)).map((p) => {
       const foto = p.foto_url ? '<img src="' + p.foto_url + '" style="width:60px;height:60px;object-fit:cover;" />' : '—';
@@ -198,13 +294,15 @@ export default function Ventas({ fardos, avisar }) {
         p.venta?.fecha_venta || '',
         p.venta?.precio_venta ?? '',
         p.venta?.deposito_cliente ?? '',
+        p.venta ? dinero(p.venta.abonado) : '',
+        p.venta ? dinero(p.venta.saldo) : '',
         p.venta?.celular_cliente || '',
         p.venta?.nombre_cliente || '',
         p.venta?.ciudad || '',
         p.venta?.fecha_entrega || '',
         p.venta?.ubicacion || '',
         p.venta?.observacion || '',
-        p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin venta'
+        p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin Vender'
       ].map(escH).map((c) => '<td>' + c + '</td>').join('');
       return '<tr><td>' + escH(codigo) + '</td><td>' + foto + '</td>' + resto + '</tr>';
     }).join('');
@@ -272,6 +370,7 @@ export default function Ventas({ fardos, avisar }) {
                 <option value="P">P — Pendiente de Entrega</option>
                 <option value="D">D — Deuda</option>
                 <option value="E">E — Entregado</option>
+                <option value="S">S — Sin Vender</option>
               </select>
             </div>
             <div>
@@ -294,6 +393,9 @@ export default function Ventas({ fardos, avisar }) {
             <div className="actions">
               <button className="btn-entregar" onClick={exportarExcel}>📥 Reporte Excel</button>
               <button className="btn-edit" onClick={exportarPDF}>📄 Reporte PDF</button>
+              <button className="btn-lila" onClick={() => setVerImagenes((v) => !v)}>
+                {verImagenes ? '🙈 Ocultar imágenes' : '🖼️ Mostrar imágenes'}
+              </button>
             </div>
           )}
           {cargando ? (
@@ -306,7 +408,7 @@ export default function Ventas({ fardos, avisar }) {
                 <thead>
                   <tr>
                     <th>Código</th><th>Foto</th><th>Precio</th><th>Fecha venta</th>
-                    <th>Precio venta</th><th>Depósito</th><th>Celular</th><th>Cliente</th>
+                    <th>Precio venta</th><th>Depósito</th><th>Abonado</th><th>Saldo</th><th>Celular</th><th>Cliente</th>
                     <th>Ciudad</th><th>Ubicación</th><th>Observación</th><th>Estado</th><th>Acciones</th>
                   </tr>
                 </thead>
@@ -319,12 +421,14 @@ export default function Ventas({ fardos, avisar }) {
                       <td data-label="Fecha venta">{p.venta?.fecha_venta || '—'}</td>
                       <td data-label="Precio venta">{p.venta?.precio_venta ?? '—'}</td>
                       <td data-label="Depósito">{p.venta?.deposito_cliente ?? '—'}</td>
+                      <td data-label="Abonado">{p.venta ? dinero(p.venta.abonado) : '—'}</td>
+                      <td data-label="Saldo">{p.venta ? dinero(p.venta.saldo) : '—'}</td>
                       <td data-label="Celular">{p.venta?.celular_cliente || '—'}</td>
                       <td data-label="Cliente">{p.venta?.nombre_cliente || '—'}</td>
                       <td data-label="Ciudad">{p.venta?.ciudad || '—'}</td>
                       <td data-label="Ubicación">{p.venta?.ubicacion || '—'}</td>
                       <td data-label="Observación">{p.venta?.observacion || '—'}</td>
-                      <td data-label="Estado">{p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin venta'}</td>
+                      <td data-label="Estado">{p.venta ? (ESTADOS[p.venta.estado] + ' (' + p.venta.estado + ')') : 'Sin Vender'}</td>
                       <td data-label="Acciones" className="actions">
                         <button className="btn-edit" onClick={() => abrirVenta(p)}>{p.venta ? 'Editar' : 'Registrar'}</button>
                       </td>
@@ -335,6 +439,34 @@ export default function Ventas({ fardos, avisar }) {
             </div>
           )}
           <Paginacion total={visibles.length} pagina={pagina} setPagina={setPagina} porPagina={POR_PAGINA} />
+        </div>
+      )}
+
+      {fardoId && !faltaTabla && verImagenes && (
+        <div className="card">
+          <h2>🖼️ Imágenes del fardo: {fardoSel ? `${fardoSel.codigo_fardo} — ${fardoSel.nombre_fardo}` : ''}</h2>
+          <p className="hint">Desliza horizontalmente para ver más imágenes. Haz clic en una foto para ver el producto completo y decidir si deseas registrar o editar su venta.</p>
+          {visibles.length === 0 ? (
+            <p className="empty">Sin productos para mostrar.</p>
+          ) : (
+            <div className="galeria-productos">
+              {[...visibles].sort((a, b) => (a.correlativo ?? 0) - (b.correlativo ?? 0)).map((p) => (
+                <button
+                  type="button"
+                  key={p.id}
+                  className={'galeria-item' + (p.venta ? ' estado-' + p.venta.estado : '')}
+                  onClick={() => setVerProducto(p)}
+                  title={'Ver producto — ' + p.nombre_foto}
+                >
+                  {p.foto_url
+                    ? <img src={p.foto_url} alt={p.nombre_foto} loading="lazy" />
+                    : <span className="sin-foto">📷</span>}
+                  <span className="codigo">{p.nombre_foto}</span>
+                  <span className="estado">{p.venta ? ESTADOS[p.venta.estado] : 'Sin Vender'}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -352,8 +484,9 @@ export default function Ventas({ fardos, avisar }) {
               <input type="number" name="precio_venta" min="0" step="0.01" value={form.precio_venta} onChange={cambiar} />
             </div>
             <div>
-              <label>Depósito cliente</label>
+              <label>Depósito / enganche inicial</label>
               <input type="number" name="deposito_cliente" min="0" step="0.01" value={form.deposito_cliente} onChange={cambiar} />
+              <small className="hint">Los pagos posteriores se registran en “Control de deuda”.</small>
             </div>
             <div>
               <label>Celular cliente</label>
@@ -374,6 +507,7 @@ export default function Ventas({ fardos, avisar }) {
                 <option value="P">P — Pendiente de Entrega</option>
                 <option value="D">D — Deuda</option>
                 <option value="E">E — Entregado</option>
+                <option value="S">S — Sin Vender</option>
               </select>
             </div>
             <div>
@@ -394,6 +528,164 @@ export default function Ventas({ fardos, avisar }) {
               <button type="button" onClick={() => setEditando(null)}>Cancelar</button>
             </div>
           </form>
+
+          {editando.venta && (
+            <div style={{ marginTop: 18, padding: 14, background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10 }}>
+              <h3 style={{ margin: '0 0 10px' }}>💳 Control de deuda — {editando.nombre_foto}</h3>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 14px', minWidth: 130 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#92400e', textTransform: 'uppercase' }}>Total venta</div>
+                  <div style={{ fontSize: 18, fontWeight: 900 }}>Bs {dinero(editando.venta.precio_venta)}</div>
+                </div>
+                <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 14px', minWidth: 130 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#92400e', textTransform: 'uppercase' }}>Enganche</div>
+                  <div style={{ fontSize: 18, fontWeight: 900 }}>Bs {dinero(editando.venta.deposito_cliente)}</div>
+                </div>
+                <div style={{ background: '#fff', border: '1px solid #86efac', borderRadius: 8, padding: '8px 14px', minWidth: 130 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>Abonado</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: '#15803d' }}>Bs {dinero(editando.venta.abonado)}</div>
+                </div>
+                <div style={{ background: '#fff', border: '1px solid ' + (Number(editando.venta.saldo) > 0 ? '#fca5a5' : '#86efac'), borderRadius: 8, padding: '8px 14px', minWidth: 130 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: Number(editando.venta.saldo) > 0 ? '#991b1b' : '#166534', textTransform: 'uppercase' }}>Saldo pendiente</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: Number(editando.venta.saldo) > 0 ? '#b91c1c' : '#15803d' }}>Bs {dinero(editando.venta.saldo)}</div>
+                </div>
+              </div>
+
+              {!pagosTabla && (
+                <p className="error">Falta crear la tabla de pagos. Ejecuta <strong>auth-supabase/PAGOS_VENTA.sql</strong> en Supabase para registrar abonos.</p>
+              )}
+
+              {Number(editando.venta.saldo) > 0 ? (
+                <form className="grid2" onSubmit={registrarAbono}>
+                  <div>
+                    <label>Fecha de pago</label>
+                    <input type="date" value={pagoFecha} onChange={(e) => setPagoFecha(e.target.value)} required />
+                  </div>
+                  <div>
+                    <label>Monto a abonar</label>
+                    <input
+                      type="number" min="0.01" step="0.01"
+                      max={Number(editando.venta.saldo) || undefined}
+                      value={pagoMonto}
+                      onChange={(e) => setPagoMonto(e.target.value)}
+                      placeholder={'Máx. Bs ' + dinero(editando.venta.saldo)}
+                      required
+                    />
+                  </div>
+                  <div className="full">
+                    <label>Nota / comprobante (opcional)</label>
+                    <input value={pagoNota} onChange={(e) => setPagoNota(e.target.value)} placeholder="Ej: pago parcial, recibo 015" />
+                  </div>
+                  <div className="full">
+                    <button className="btn-entregar" disabled={guardandoPago || !pagosTabla}>
+                      {guardandoPago ? 'Registrando...' : '💵 Registrar abono'}
+                    </button>{' '}
+                    <button type="button" onClick={() => setPagoMonto(dinero(editando.venta.saldo))}>
+                      Abonar saldo total
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <p className="success" style={{ margin: '6px 0' }}>
+                  ✅ Deuda saldada. Cambia el estado a P (Pendiente de Entrega) o E (Entregado) según corresponda y pulsa <strong>Guardar venta</strong>.
+                </p>
+              )}
+
+              {(editando.venta.pagos || []).length > 0 && (
+                <div className="tabla" style={{ marginTop: 12 }}>
+                  <table>
+                    <thead>
+                      <tr><th>Fecha de pago</th><th>Monto</th><th>Nota</th><th>Acciones</th></tr>
+                    </thead>
+                    <tbody>
+                      {editando.venta.pagos.map((pg) => (
+                        <tr key={pg.id}>
+                          <td data-label="Fecha de pago">{pg.fecha_pago}</td>
+                          <td data-label="Monto"><strong>Bs {dinero(pg.monto)}</strong></td>
+                          <td data-label="Nota">{pg.nota || '—'}</td>
+                          <td data-label="Acciones" className="actions">
+                            <button type="button" className="btn-del" onClick={() => eliminarAbono(pg)}>Eliminar</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {verProducto && (
+        <div className="modal-fondo" onClick={() => setVerProducto(null)}>
+          <div className="modal-producto" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-cabecera">
+              <h3>👕 Producto {verProducto.nombre_foto}</h3>
+              <button type="button" className="modal-cerrar" onClick={() => setVerProducto(null)}>✕ Cerrar</button>
+            </div>
+            <div className="modal-cuerpo">
+              <div className="modal-foto">
+                {verProducto.foto_url ? (
+                  <>
+                    <img
+                      src={verProducto.foto_url}
+                      alt={verProducto.nombre_foto}
+                      title="Clic para ver la imagen completa"
+                      onClick={() => window.open(verProducto.foto_url, '_blank')}
+                    />
+                    <a
+                      className="ver-completa"
+                      href={verProducto.foto_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      🔍 Ver imagen en tamaño completo
+                    </a>
+                  </>
+                ) : (
+                  <span className="sin-foto">📷</span>
+                )}
+              </div>
+              <div className="modal-datos">
+                <p><strong>Fardo</strong><br />{fardoSel ? `${fardoSel.codigo_fardo} — ${fardoSel.nombre_fardo}` : '—'}</p>
+                <p><strong>Código</strong><br />{verProducto.nombre_foto || '—'}</p>
+                <p><strong>Precio original</strong><br />Bs {dinero(verProducto.precio)}</p>
+                <p><strong>Estado</strong><br />{verProducto.venta ? ESTADOS[verProducto.venta.estado] : 'Sin Vender'}</p>
+                {verProducto.venta ? (
+                  <>
+                    <p><strong>Cliente</strong><br />{verProducto.venta.nombre_cliente || '—'}</p>
+                    <p><strong>Celular</strong><br />{verProducto.venta.celular_cliente || '—'}</p>
+                    <p><strong>Ciudad</strong><br />{verProducto.venta.ciudad || '—'}</p>
+                    <p><strong>Fecha de venta</strong><br />{verProducto.venta.fecha_venta || '—'}</p>
+                    <p><strong>Precio de venta</strong><br />Bs {dinero(verProducto.venta.precio_venta)}</p>
+                    <p><strong>Depósito</strong><br />Bs {dinero(verProducto.venta.deposito_cliente)}</p>
+                    <p><strong>Abonado</strong><br />Bs {dinero(verProducto.venta.abonado)}</p>
+                    <p><strong>Saldo pendiente</strong><br />Bs {dinero(verProducto.venta.saldo)}</p>
+                    <p><strong>Fecha de entrega</strong><br />{verProducto.venta.fecha_entrega || '—'}</p>
+                    <p><strong>Ubicación</strong><br />{verProducto.venta.ubicacion || '—'}</p>
+                    <p className="full"><strong>Observación</strong><br />{verProducto.venta.observacion || '—'}</p>
+                  </>
+                ) : (
+                  <p className="full"><em>Este producto todavía no tiene una venta registrada.</em></p>
+                )}
+              </div>
+            </div>
+            <div className="modal-acciones">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  const producto = verProducto;
+                  setVerProducto(null);
+                  abrirVenta(producto);
+                }}
+              >
+                {verProducto.venta ? '✏️ ¿Desea editar la venta?' : '💰 ¿Desea registrar la venta?'}
+              </button>
+              <button type="button" onClick={() => setVerProducto(null)}>Cancelar</button>
+            </div>
+          </div>
         </div>
       )}
     </>

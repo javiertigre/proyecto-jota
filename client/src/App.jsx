@@ -13,6 +13,7 @@ import Ventas from './components/Ventas.jsx';
 import ReporteVentas from './components/ReporteVentas.jsx';
 import Analisis from './components/Analisis.jsx';
 import Dinamicas from './components/Dinamicas.jsx';
+import Destinos from './components/Destinos.jsx';
 
 // Pestaña inicial según tipo de usuario
 function tabInicial(rol) {
@@ -92,7 +93,7 @@ export default function App() {
   const esAdmin = rol === 'admin';
   const puede = (t) => esAdmin || (rol === 'registro' && t === 'registro') || (rol === 'entregas' && t === 'entregas');
 
-  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'ubicaciones', 'lugares_entrega', 'cuentas', 'dinamicas'].includes(tab);
+  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'destinos', 'ubicaciones', 'lugares_entrega', 'cuentas', 'dinamicas'].includes(tab);
   const irTab = (t) => {
     setTab(t);
     setMenuAbierto(false);
@@ -104,6 +105,7 @@ export default function App() {
     if (opcion === 'cuadre') { irTab('config'); setVerCuadre(true); }
     if (opcion === 'clientes') irTab('clientes');
     if (opcion === 'buses') irTab('buses');
+    if (opcion === 'destinos') irTab('destinos');
     if (opcion === 'ubicaciones') irTab('ubicaciones');
     if (opcion === 'lugares_entrega') irTab('lugares_entrega');
     if (opcion === 'cuentas') irTab('cuentas');
@@ -138,8 +140,9 @@ export default function App() {
               <button onClick={() => elegirConfig('cuadre')}>💵 Cuadre</button>
               <button onClick={() => elegirConfig('clientes')}>👥 Registro de Clientes</button>
               <button onClick={() => elegirConfig('buses')}>🚌 Registro de Buses</button>
+              <button onClick={() => elegirConfig('destinos')}>🗺️ Registro de Destinos</button>
               <button onClick={() => elegirConfig('ubicaciones')}>📍 Ubicación del Producto</button>
-              <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Registro de Entregas</button>
+              <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Lugares de Entrega</button>
               <button onClick={() => elegirConfig('cuentas')}>🔑 Administrar Cuentas</button>
               <button onClick={() => elegirConfig('dinamicas')}>🎯 Dinámicas</button>
             </div>
@@ -169,8 +172,9 @@ export default function App() {
             <button onClick={() => elegirConfig('cuadre')}>💵 Cuadre</button>
             <button onClick={() => elegirConfig('clientes')}>👥 Registro de Clientes</button>
             <button onClick={() => elegirConfig('buses')}>🚌 Registro de Buses</button>
+            <button onClick={() => elegirConfig('destinos')}>🗺️ Registro de Destinos</button>
             <button onClick={() => elegirConfig('ubicaciones')}>📍 Ubicación del Producto</button>
-            <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Registro de Entregas</button>
+            <button onClick={() => elegirConfig('lugares_entrega')}>🚚 Lugares de Entrega</button>
             <button onClick={() => elegirConfig('cuentas')}>🔑 Administrar Cuentas</button>
             <button onClick={() => elegirConfig('dinamicas')}>🎯 Dinámicas</button>
           </div>
@@ -193,6 +197,10 @@ export default function App() {
 
       {esAdmin && tab === 'buses' && (
         <Buses avisar={avisar} />
+      )}
+
+      {esAdmin && tab === 'destinos' && (
+        <Destinos avisar={avisar} />
       )}
 
       {esAdmin && tab === 'ubicaciones' && (

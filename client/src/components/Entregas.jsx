@@ -68,7 +68,7 @@ export default function Entregas({ avisar }) {
   return (
     <>
       <div className="card">
-        <h2>🚚 {editId ? 'Editar lugar de entrega' : 'Registro de Entregas'}</h2>
+        <h2>🚚 {editId ? 'Editar lugar de entrega' : 'Lugares de Entrega'}</h2>
         {faltaTabla ? (
           <p className="error">Falta crear la tabla lugares_entrega en Supabase. Ejecuta: create table lugares_entrega (id bigint generated always as identity primary key, lugar text not null, ciudad text not null, detalle text, created_at timestamptz default now()).</p>
         ) : (
@@ -85,9 +85,19 @@ export default function Entregas({ avisar }) {
               <label>Detalle</label>
               <input name="detalle" placeholder="Ej: Oficina 5, turno mañana" value={form.detalle} onChange={cambiar} />
             </div>
-            <div>
-              <button className={editId ? 'btn-blue' : 'btn-primary'}>{editId ? 'Actualizar' : 'Guardar'}</button>{' '}
-              {editId && <button type="button" onClick={() => { setEditId(null); setForm(vacio); }}>Cancelar</button>}
+            <div className="form-acciones-responsive">
+              <button className={`btn-submit-entrega ${editId ? 'btn-submit-edit' : 'btn-submit-lp'}`}>
+                {editId ? '💾 Actualizar' : '➕ Guardar'}
+              </button>
+              {editId && (
+                <button
+                  type="button"
+                  className="btn-cancelar"
+                  onClick={() => { setEditId(null); setForm(vacio); }}
+                >
+                  Cancelar
+                </button>
+              )}
             </div>
           </form>
         )}

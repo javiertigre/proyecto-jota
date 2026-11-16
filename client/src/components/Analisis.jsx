@@ -3,9 +3,12 @@ import { api } from '../api.js';
 import { generarExcel } from '../excel.js';
 import Paginacion from './Paginacion.jsx';
 
+import AnalisisCliente from './AnalisisCliente.jsx';
+
 const ESTADOS = { P: 'Pendiente', D: 'Deuda', E: 'Entregado' };
 
 export default function Analisis({ fardos, avisar }) {
+  const [modoCliente, setModoCliente] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [fardoId, setFardoId] = useState('');
   const [items, setItems] = useState([]);
@@ -146,31 +149,51 @@ export default function Analisis({ fardos, avisar }) {
   return (
     <>
       <div className="card">
-        <h2>📈 Análisis por fardo</h2>
-        <form className="grid1" onSubmit={(e) => e.preventDefault()}>
-          <div>
-            <label>Fardo</label>
-            <select value={fardoId} onChange={(e) => elegir(e.target.value)}>
-              <option value="">-- Selecciona un fardo --</option>
-              {fardosFiltrados.map((f) => (
-                <option key={f.id} value={f.id}>{f.codigo_fardo} — {f.nombre_fardo}</option>
-              ))}
-            </select>
-            <small className="hint">{fardosFiltrados.length} fardo(s) encontrado(s)</small>
-          </div>
-          <div>
-            <label>🔍 Buscar por código de fardo</label>
-            <input
-              type="search"
-              placeholder="Ej: FAR-001"
-              value={busqueda}
-              onChange={(e) => cambiarBusqueda(e.target.value)}
-            />
-          </div>
-        </form>
+        <h2>📈 Análisis</h2>
+        <div className="actions" style={{ marginBottom: 8 }}>
+          <button
+            type="button"
+            className={modoCliente ? '' : 'btn-edit'}
+            onClick={() => setModoCliente(false)}
+          >
+            📦 Por fardo
+          </button>
+          <button
+            type="button"
+            className={modoCliente ? 'btn-lila' : ''}
+            onClick={() => setModoCliente(true)}
+          >
+            👤 Análisis por Cliente
+          </button>
+        </div>
+        {!modoCliente && (
+          <form className="grid1" onSubmit={(e) => e.preventDefault()}>
+            <div>
+              <label>Fardo</label>
+              <select value={fardoId} onChange={(e) => elegir(e.target.value)}>
+                <option value="">-- Selecciona un fardo --</option>
+                {fardosFiltrados.map((f) => (
+                  <option key={f.id} value={f.id}>{f.codigo_fardo} — {f.nombre_fardo}</option>
+                ))}
+              </select>
+              <small className="hint">{fardosFiltrados.length} fardo(s) encontrado(s)</small>
+            </div>
+            <div>
+              <label>🔍 Buscar por código de fardo</label>
+              <input
+                type="search"
+                placeholder="Ej: FAR-001"
+                value={busqueda}
+                onChange={(e) => cambiarBusqueda(e.target.value)}
+              />
+            </div>
+          </form>
+        )}
       </div>
 
-      {fardoId && (
+      {modoCliente && <AnalisisCliente avisar={avisar} />}
+
+      {!modoCliente && fardoId && (
         <div className="card">
           <h2>🧾 Productos del fardo: {fardoSel ? `${fardoSel.codigo_fardo} — ${fardoSel.nombre_fardo}` : ''}</h2>
           <div className="resumen-analisis">
@@ -260,7 +283,7 @@ export default function Analisis({ fardos, avisar }) {
         </div>
       )}
 
-      {!fardoId && (
+      {!modoCliente && !fardoId && (
         <div className="card">
           <p className="empty">Busca un fardo y selecciónalo para ver sus productos y precios de remate.</p>
         </div>

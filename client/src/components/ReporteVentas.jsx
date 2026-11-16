@@ -1,7 +1,10 @@
 import { Fragment, useState } from 'react';
 import { api } from '../api.js';
 
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = () => {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+};
 const nombreEstado = (e) => e === 'P' ? 'Pendiente (P)' : e === 'D' ? 'Deuda (D)' : e === 'E' ? 'Entregado (E)' : (e || '');
 
 const compararCodigo = (a, b) =>
@@ -38,20 +41,37 @@ export default function ReporteVentas({ avisar }) {
   const [totVen, setTotVen] = useState(0);
   const [buscado, setBuscado] = useState(false);
   const [cargando, setCargando] = useState(false);
+  const [pagos, setPagos] = useState([]);
+  const [totCob, setTotCob] = useState(0);
+  const [pagosFaltaTabla, setPagosFaltaTabla] = useState(false);
+  const [pagosError, setPagosError] = useState('');
 
   const grupos = agruparPorFardo(items);
   const totalOriginal = items.reduce((s, it) => s + (Number(it.precio_original) || 0), 0);
+  const hastaEfectivo = hasta && hasta >= desde ? hasta : desde;
 
   const buscar = async (e) => {
     if (e) e.preventDefault();
     if (!desde) { avisar('error', 'Elige la fecha desde.'); return; }
+    if (hasta && hasta < desde) setHasta(desde);
     setCargando(true);
     try {
-      const params = new URLSearchParams({ desde, hasta: hasta || desde });
+      const params = new URLSearchParams({ desde, hasta: hastaEfectivo });
       const r = await api.get('/api/reportes/ventas?' + params.toString());
+      let rp = { items: [], total: 0, faltaTabla: false };
+      let errorPagos = '';
+      try {
+        rp = await api.get('/api/reportes/pagos?' + params.toString());
+      } catch (err) {
+        errorPagos = err.message;
+      }
       setItems(r.items || []);
       setTotDep(r.total_deposito || 0);
       setTotVen(r.total_venta || 0);
+      setPagos(rp.items || []);
+      setTotCob(rp.total || 0);
+      setPagosFaltaTabla(!!rp.faltaTabla);
+      setPagosError(errorPagos);
       setBuscado(true);
       if (!r.items || !r.items.length) avisar('error', 'Sin ventas en esas fechas.');
     } catch (err) {
@@ -61,7 +81,7 @@ export default function ReporteVentas({ avisar }) {
     }
   };
 
-  const rangoTxt = 'Del ' + desde + ' al ' + (hasta || desde);
+  const rangoTxt = 'Del ' + desde + ' al ' + hastaEfectivo;
 
   const exportarExcel = () => {
     const esc = (v) => {
@@ -79,6 +99,10 @@ export default function ReporteVentas({ avisar }) {
       filasDatos.push(['', '', 'SUBTOTAL ' + g.fardo, g.totalOriginal, g.totalVenta, g.totalDeposito]);
     });
 
+    const filasCobranza = pagos.map((p) => [
+      p.fecha_pago, p.codigo, p.fardo, p.cliente, p.celular, p.monto, p.nota
+    ]);
+
     const lineas = [
       ['REPORTE DE VENTAS POR FECHAS'],
       ['CAPRICORNIO DETALLES'],
@@ -87,7 +111,15 @@ export default function ReporteVentas({ avisar }) {
       ['Fecha venta', 'Código', 'Fardo', 'Precio original', 'Precio venta', 'Depósito', 'Cliente', 'Celular', 'Ciudad', 'Estado', 'Ubicación', 'Observación', 'F. entrega'],
       ...filasDatos,
       [],
-      ['', '', 'TOTAL GENERAL (' + items.length + ' ventas)', totalOriginal, totVen, totDep]
+      ['', '', 'TOTAL GENERAL (' + items.length + ' ventas)', totalOriginal, totVen, totDep],
+      ...(pagos.length ? [
+        [],
+        ['COBRANZA DE DEUDAS POR FECHA DE PAGO'],
+        ['Fecha pago', 'Código', 'Fardo', 'Cliente', 'Celular', 'Monto', 'Nota'],
+        ...filasCobranza,
+        [],
+        ['', '', '', '', 'TOTAL COBRANZA', totCob]
+      ] : [])
     ];
     const csv = '﻿' + lineas.map((f) => f.map(esc).join(';')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -115,6 +147,14 @@ export default function ReporteVentas({ avisar }) {
       return cabecera + detalle + subtotal;
     }).join('');
 
+    const cobranzaHtml = pagos.length
+      ? '<h3 style="margin-top:18px">💳 COBRANZA DE DEUDAS POR FECHA DE PAGO</h3>'
+        + '<table><thead><tr><th>Fecha pago</th><th>Código</th><th>Fardo</th><th>Cliente</th><th>Celular</th><th>Monto</th><th>Nota</th></tr></thead><tbody>'
+        + pagos.map((p) => '<tr>' + [p.fecha_pago, p.codigo, p.fardo, p.cliente, p.celular, p.monto, p.nota]
+          .map(escH).map((c) => '<td>' + c + '</td>').join('') + '</tr>').join('')
+        + '</tbody><tfoot><tr class="tot"><td colspan="5">TOTAL COBRANZA (' + pagos.length + ' abonos)</td><td>' + escH(totCob) + '</td><td></td></tr></tfoot></table>'
+      : '';
+
     const w = window.open('', '_blank');
     if (!w) return;
     w.document.write('<html><head><title>Reporte de ventas</title><style>'
@@ -134,6 +174,7 @@ export default function ReporteVentas({ avisar }) {
       + '<div class="cabecera"><img class="logo-rep" src="/JC.jpeg" /><div class="tit"><h1>REPORTE DE VENTAS POR FECHAS</h1><h3>CAPRICORNIO DETALLES</h3><p class="sub">' + escH(rangoTxt) + ' · ' + grupos.length + ' fardo' + (grupos.length === 1 ? '' : 's') + '</p></div></div>'
       + '<table><thead><tr><th>F. venta</th><th>Código</th><th>Fardo</th><th>P. orig.</th><th>P. venta</th><th>Depósito</th><th>Cliente</th><th>Celular</th><th>Ciudad</th><th>Estado</th><th>Ubicación</th><th>Observación</th><th>F. entrega</th></tr></thead><tbody>' + filas + '</tbody>'
       + '<tfoot><tr class="tot"><td colspan="3">TOTAL GENERAL (' + items.length + ' ventas)</td><td>' + escH(totalOriginal) + '</td><td>' + escH(totVen) + '</td><td>' + escH(totDep) + '</td><td colspan="7"></td></tr></tfoot></table>'
+      + cobranzaHtml
       + '<p class="no-print"><button onclick="window.print()">Imprimir / Guardar PDF</button></p>'
       + '</body></html>');
     w.document.close();
@@ -147,7 +188,11 @@ export default function ReporteVentas({ avisar }) {
         <form className="grid2" onSubmit={buscar}>
           <div>
             <label>Desde</label>
-            <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} required />
+            <input type="date" value={desde} onChange={(e) => {
+              const v = e.target.value;
+              setDesde(v);
+              if (!hasta || hasta < v) setHasta(v);
+            }} required />
           </div>
           <div>
             <label>Hasta</label>
@@ -161,8 +206,55 @@ export default function ReporteVentas({ avisar }) {
 
       {buscado && (
         <div className="card">
+          <h2>💳 Cobranza de deudas por fecha de pago ({pagos.length})</h2>
+          <p className="hint">Abonos registrados {rangoTxt}. Se controlan por la fecha en que se pagó y <strong>no se suman al total de ventas</strong>.</p>
+          {pagosError ? (
+            <p className="error">No se pudo cargar la cobranza: {pagosError}</p>
+          ) : pagosFaltaTabla ? (
+            <p className="error">Falta crear la tabla de pagos. Ejecuta <strong>auth-supabase/PAGOS_VENTA.sql</strong> en Supabase.</p>
+          ) : pagos.length === 0 ? (
+            <p className="empty">Sin abonos registrados en el rango.</p>
+          ) : (
+            <div className="tabla tabla-ancha">
+              <table>
+                <thead>
+                  <tr><th>Fecha pago</th><th>Código</th><th>Fardo</th><th>Cliente</th><th>Celular</th><th>Monto</th><th>Nota</th></tr>
+                </thead>
+                <tbody>
+                  {pagos.map((p) => (
+                    <tr key={p.id}>
+                      <td data-label="Fecha pago">{p.fecha_pago}</td>
+                      <td data-label="Código">{p.codigo || '—'}</td>
+                      <td data-label="Fardo">{p.fardo || '—'}</td>
+                      <td data-label="Cliente">{p.cliente || '—'}</td>
+                      <td data-label="Celular">{p.celular || '—'}</td>
+                      <td data-label="Monto"><strong>Bs {Number(p.monto).toFixed(2)}</strong></td>
+                      <td data-label="Nota">{p.nota || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="5"><strong>TOTAL COBRADO ({pagos.length} abonos)</strong></td>
+                    <td data-label="Total"><strong style={{ color: '#7e22ce' }}>Bs {Number(totCob).toFixed(2)}</strong></td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {buscado && (
+        <div className="card">
           <h2>🧾 Ventas {rangoTxt} ({items.length}) · {grupos.length} fardo{grupos.length === 1 ? '' : 's'}</h2>
-          {items.length > 0 && (
+          {pagos.length > 0 && (
+            <p className="success" style={{ margin: '4px 0 10px' }}>
+              💳 Cobranza de deudas en el rango: <strong>Bs {Number(totCob).toFixed(2)}</strong> ({pagos.length} abono{pagos.length === 1 ? '' : 's'}). El detalle está en la sección <strong>Cobranza de deudas</strong>.
+            </p>
+          )}
+          {(items.length > 0 || pagos.length > 0) && (
             <div className="actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
               <button className="btn-entregar" onClick={exportarExcel}>📥 Reporte Excel</button>
               <button className="btn-edit" onClick={exportarPDF}>📄 Reporte PDF</button>
@@ -184,6 +276,11 @@ export default function ReporteVentas({ avisar }) {
                 <div style={{ background: '#e0e7ff', border: '1px solid #a5b4fc', borderRadius: 10, padding: '10px 16px', minWidth: 180 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: '#3730a3', textTransform: 'uppercase', letterSpacing: '.04em' }}>Ventas / Fardos</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: '#3730a3' }}>{items.length} · {grupos.length}</div>
+                </div>
+                <div style={{ background: '#f3e8ff', border: '1px solid #d8b4fe', borderRadius: 10, padding: '10px 16px', minWidth: 180 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#6b21a8', textTransform: 'uppercase', letterSpacing: '.04em' }}>Cobranza de deudas</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#7e22ce' }}>Bs {Number(totCob).toFixed(2)}</div>
+                  <div style={{ fontSize: 11, color: '#6b21a8' }}>{pagos.length} abono(s) · no suma a ventas</div>
                 </div>
               </div>
               <div className="tabla tabla-ancha">

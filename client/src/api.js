@@ -24,6 +24,62 @@ function fotoUrl(ruta) {
   return supabase.storage.from('fotos').getPublicUrl(ruta).data.publicUrl;
 }
 
+// ¿El error es porque todavía no existe una tabla en Supabase?
+function esFaltaTabla(error) {
+  const codigo = error && error.code;
+  const msg = String((error && error.message) || '');
+  return codigo === '42P01'
+    || /relation .* does not exist|Could not find the table|no existe la relaci/i.test(msg);
+}
+
+const AVISO_TABLA_PAGOS = 'Falta crear la tabla de pagos (pagos_venta). Ejecuta auth-supabase/PAGOS_VENTA.sql en el SQL Editor de Supabase y vuelve a intentar.';
+const AVISO_TABLA_REGISTRO_ENTREGAS = 'Falta crear la tabla de Registro de Entregas (registro_entregas). Ejecuta auth-supabase/REGISTRO_ENTREGAS.sql en el SQL Editor de Supabase y vuelve a intentar.';
+
+const redondear2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+// Saldo pendiente: nunca negativo (si el depósito supera el precio, queda en 0)
+const calcularSaldo = (precio, deposito, abonado) =>
+  Math.max(0, redondear2((Number(precio) || 0) - (Number(deposito) || 0) - (Number(abonado) || 0)));
+
+
+// Fecha local del dispositivo (evita que de noche se guarde el día siguiente por usar UTC)
+function hoyLocalISO() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function payloadRegistroEntrega(body) {
+  const { cliente_id, cliente_nombre, cliente_celular, lugar_entrega_id,
+    lugar_texto, fecha_entrega, estado, observacion, tipo, destino } = body || {};
+  const nombre = cliente_nombre ? String(cliente_nombre).trim() : '';
+  const lugar = lugar_texto ? String(lugar_texto).trim() : '';
+  const tipoEntrega = tipo === 'INT' ? 'INT' : 'LP';
+  const destinoTexto = destino ? String(destino).trim() : '';
+  if (!nombre) throw new Error('El nombre del cliente es obligatorio.');
+  if (!lugar) throw new Error('El lugar donde se encuentra el pedido es obligatorio.');
+  if (tipoEntrega === 'INT' && !destinoTexto) throw new Error('El destino es obligatorio para entregas al interior.');
+
+  const cId = (cliente_id !== undefined && cliente_id !== null && cliente_id !== '' && !isNaN(Number(cliente_id)))
+    ? Number(cliente_id)
+    : null;
+  const lId = (lugar_entrega_id !== undefined && lugar_entrega_id !== null && lugar_entrega_id !== '' && !isNaN(Number(lugar_entrega_id)))
+    ? Number(lugar_entrega_id)
+    : null;
+
+  return {
+    cliente_id: cId,
+    cliente_nombre: nombre,
+    cliente_celular: cliente_celular ? String(cliente_celular).trim() : null,
+    lugar_entrega_id: lId,
+    lugar_texto: lugar,
+    fecha_entrega: fecha_entrega ? String(fecha_entrega).trim() : hoyLocalISO(),
+    estado: estado === 'E' ? 'E' : 'P',
+    observacion: observacion ? String(observacion).trim() : null,
+    tipo: tipoEntrega,
+    destino: destinoTexto || null
+  };
+}
+
 // Comprimir foto en el navegador: máx 800px, JPEG calidad 0.6 (antes lo hacía sharp)
 async function comprimirFoto(file) {
   try {
@@ -360,6 +416,117 @@ async function route(method, rawPath, body) {
     );
     return { clientes: data || [] };
   }
+
+  // ----- Historial completo de un cliente (compras, deudas y pagos) -----
+  if (method === 'GET' && path === '/api/clientes/historial') {
+    const celular = (q.get('celular') || '').trim();
+    const nombre = (q.get('nombre') || '').trim();
+    const vacio = {
+      cliente: null, items: [], pagos: [],
+      totales: { compras: 0, total_venta: 0, total_deposito: 0, total_abonado: 0, total_saldo: 0, deudas: 0, pagos: 0 }
+    };
+    if (!celular && !nombre) return vacio;
+
+    // 1) Localizar la ficha del cliente
+    let cliente = null;
+    if (celular) {
+      const { data } = await supabase.from('clientes').select('*').eq('celular', celular).limit(1);
+      cliente = (data && data[0]) || null;
+    }
+    if (!cliente && nombre) {
+      const { data } = await supabase.from('clientes').select('*').ilike('nombre', '%' + nombre + '%').limit(1);
+      cliente = (data && data[0]) || null;
+    }
+
+    // 2) Traer todas sus ventas (por celular; si no hay, por nombre)
+    let consulta = supabase.from('ventas').select('*');
+    if (celular) consulta = consulta.eq('celular_cliente', celular);
+    else consulta = consulta.ilike('nombre_cliente', '%' + nombre + '%');
+    const { data: ventas, error: vErr } = await consulta.order('fecha_venta', { ascending: false }).limit(1000);
+    if (vErr) throw new Error(vErr.message);
+    const listaVentas = ventas || [];
+    if (!listaVentas.length) return { ...vacio, cliente };
+
+    // 3) Productos, fardos y pagos relacionados
+    const ventaIds = listaVentas.map((v) => v.id);
+    const prodIds = [...new Set(listaVentas.map((v) => v.producto_id).filter(Boolean))];
+    const [rProds, rPagos] = await Promise.all([
+      prodIds.length ? supabase.from('productos_fardo').select('*').in('id', prodIds) : { data: [] },
+      supabase.from('pagos_venta').select('*').in('venta_id', ventaIds).order('fecha_pago', { ascending: false }).order('id', { ascending: false })
+    ]);
+    if (rPagos.error && !esFaltaTabla(rPagos.error)) throw new Error(rPagos.error.message);
+    const prods = rProds.data || [];
+    const pagos = rPagos.error ? [] : (rPagos.data || []);
+
+    const mapaP = {};
+    prods.forEach((p) => { mapaP[p.id] = p; });
+    const fardoIds = [...new Set(prods.map((p) => p.fardo_id).filter(Boolean))];
+    const { data: fardos } = fardoIds.length
+      ? await supabase.from('fardos').select('id, codigo_fardo, nombre_fardo').in('id', fardoIds)
+      : { data: [] };
+    const mapaF = {};
+    (fardos || []).forEach((f) => { mapaF[f.id] = f; });
+
+    const mapaPagos = {};
+    pagos.forEach((p) => { (mapaPagos[p.venta_id] || (mapaPagos[p.venta_id] = [])).push(p); });
+
+    const items = listaVentas.map((v) => {
+      const pr = mapaP[v.producto_id] || {};
+      const f = mapaF[pr.fardo_id] || {};
+      const listaPagos = mapaPagos[v.id] || [];
+      const abonado = redondear2(listaPagos.reduce((s, p) => s + (Number(p.monto) || 0), 0));
+      return {
+        id: v.id,
+        fecha_venta: v.fecha_venta,
+        estado: v.estado || '',
+        precio_venta: Number(v.precio_venta) || 0,
+        deposito: Number(v.deposito_cliente) || 0,
+        abonado,
+        saldo: calcularSaldo(v.precio_venta, v.deposito_cliente, abonado),
+        fecha_entrega: v.fecha_entrega || '',
+        observacion: v.observacion || '',
+        nombre_cliente: v.nombre_cliente || '',
+        celular_cliente: v.celular_cliente || '',
+        ciudad: v.ciudad || '',
+        codigo: pr.nombre_foto || '',
+        precio_original: Number(pr.precio) || 0,
+        foto_url: fotoUrl(pr.foto_ruta),
+        fardo: f.codigo_fardo ? (f.codigo_fardo + ' — ' + (f.nombre_fardo || '')) : '',
+        pagos: listaPagos
+      };
+    });
+
+    const pagosFlat = pagos.map((p) => {
+      const v = listaVentas.find((x) => x.id === p.venta_id) || {};
+      const pr = mapaP[v.producto_id] || {};
+      const f = mapaF[pr.fardo_id] || {};
+      return {
+        id: p.id,
+        venta_id: p.venta_id,
+        fecha_pago: p.fecha_pago,
+        monto: Number(p.monto) || 0,
+        nota: p.nota || '',
+        codigo: pr.nombre_foto || '',
+        fardo: f.codigo_fardo ? (f.codigo_fardo + ' — ' + (f.nombre_fardo || '')) : ''
+      };
+    }).sort((a, b) => String(b.fecha_pago).localeCompare(String(a.fecha_pago)) || (b.id - a.id));
+
+    return {
+      cliente,
+      items,
+      pagos: pagosFlat,
+      totales: {
+        compras: items.length,
+        total_venta: redondear2(items.reduce((s, i) => s + i.precio_venta, 0)),
+        total_deposito: redondear2(items.reduce((s, i) => s + i.deposito, 0)),
+        total_abonado: redondear2(items.reduce((s, i) => s + i.abonado, 0)),
+        total_saldo: redondear2(items.reduce((s, i) => s + i.saldo, 0)),
+        deudas: items.filter((i) => i.saldo > 0).length,
+        pagos: pagosFlat.length
+      }
+    };
+  }
+
   if (method === 'POST' && path === '/api/clientes') {
     const { nombre, apellido_paterno, apellido_materno, ciudad, celular } = body || {};
     if (!nombre || !apellido_paterno || !celular) {
@@ -766,6 +933,216 @@ async function route(method, rawPath, body) {
     return { ok: true, destino: data };
   }
 
+  // ----- Registro de Destinos / Ciudades -----
+  let cacheCiudadesCloud = null;
+  let ultimoFetchCiudades = 0;
+
+  async function obtenerCiudadesCloud(forzar = false) {
+    const ahora = Date.now();
+    if (!forzar && cacheCiudadesCloud && ahora - ultimoFetchCiudades < 3000) {
+      return cacheCiudadesCloud;
+    }
+    try {
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/fotos/ciudades_destinos.json?t=${ahora}`;
+      const res = await fetch(publicUrl, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json)) {
+          cacheCiudadesCloud = json;
+          ultimoFetchCiudades = ahora;
+          return cacheCiudadesCloud;
+        }
+      }
+    } catch {
+      // Continuar con fallback
+    }
+
+    try {
+      const { data, error } = await supabase.storage.from('fotos').download('ciudades_destinos.json');
+      if (!error && data) {
+        const texto = await data.text();
+        const parsed = JSON.parse(texto || '[]');
+        if (Array.isArray(parsed)) {
+          cacheCiudadesCloud = parsed;
+          ultimoFetchCiudades = ahora;
+          return cacheCiudadesCloud;
+        }
+      }
+    } catch {
+      // Ignorar
+    }
+
+    try {
+      const local = JSON.parse(localStorage.getItem('registro_ciudades_destinos') || '[]');
+      if (Array.isArray(local) && local.length > 0) {
+        cacheCiudadesCloud = local;
+        return cacheCiudadesCloud;
+      }
+    } catch {}
+
+    return cacheCiudadesCloud || [];
+  }
+
+  async function guardarCiudadesCloud(lista) {
+    if (!Array.isArray(lista)) return;
+    cacheCiudadesCloud = lista;
+    ultimoFetchCiudades = Date.now();
+    try {
+      localStorage.setItem('registro_ciudades_destinos', JSON.stringify(lista));
+    } catch {}
+    try {
+      const blob = new Blob([JSON.stringify(lista)], { type: 'application/json' });
+      await supabase.storage.from('fotos').upload('ciudades_destinos.json', blob, {
+        upsert: true,
+        cacheControl: '0',
+        contentType: 'application/json'
+      });
+    } catch (e) {
+      console.warn('Guardando ciudades_destinos.json en la nube:', e);
+    }
+  }
+
+  if (method === 'GET' && (path === '/api/ciudades' || path === '/api/destinos-ciudades')) {
+    let listaDb = null;
+    try {
+      const { data, error } = await supabase
+        .from('ciudades').select('*').order('ciudad');
+      if (!error && data) listaDb = data;
+    } catch {
+      // La tabla no existe aún en PostgreSQL
+    }
+
+    if (listaDb !== null) {
+      if (listaDb.length > 0) guardarCiudadesCloud(listaDb).catch(() => {});
+      return { ciudades: listaDb };
+    }
+
+    const listaCloud = await obtenerCiudadesCloud();
+    return { ciudades: listaCloud };
+  }
+
+  if (method === 'POST' && (path === '/api/ciudades' || path === '/api/destinos-ciudades')) {
+    const { ciudad, departamento, detalle } = body || {};
+    if (!ciudad || !String(ciudad).trim()) throw new Error('El nombre de la ciudad o destino es obligatorio.');
+    const nomCiudad = String(ciudad).trim();
+    const dep = departamento ? String(departamento).trim() : null;
+    const det = detalle ? String(detalle).trim() : null;
+
+    let nuevoItem = null;
+    try {
+      const { data, error } = await supabase.from('ciudades').insert({
+        ciudad: nomCiudad,
+        departamento: dep,
+        detalle: det
+      }).select().single();
+      if (!error && data) nuevoItem = data;
+    } catch {
+      // Fallback si la tabla no existe
+    }
+
+    if (!nuevoItem) {
+      nuevoItem = {
+        id: Date.now(),
+        ciudad: nomCiudad,
+        departamento: dep,
+        detalle: det,
+        created_at: new Date().toISOString()
+      };
+    }
+
+    const actuales = await obtenerCiudadesCloud(true);
+    const actualizados = [nuevoItem, ...actuales.filter((c) => String(c.id) !== String(nuevoItem.id))];
+    await guardarCiudadesCloud(actualizados);
+
+    return { ok: true, ciudad: nuevoItem };
+  }
+
+  if (method === 'POST' && (path === '/api/ciudades/precargar' || path === '/api/destinos-ciudades/precargar')) {
+    const { items } = body || {};
+    const lote = Array.isArray(items) ? items : [];
+    if (!lote.length) throw new Error('No hay ciudades para precargar.');
+
+    try {
+      const payload = lote.map((it) => ({
+        ciudad: String(it.ciudad || it.nombre).trim(),
+        departamento: it.departamento ? String(it.departamento).trim() : null,
+        detalle: it.detalle ? String(it.detalle).trim() : null
+      }));
+      await supabase.from('ciudades').insert(payload);
+    } catch {
+      // Silencioso si la tabla aún no existe
+    }
+
+    const actuales = await obtenerCiudadesCloud(true);
+    const mapa = {};
+    actuales.forEach((c) => { mapa[c.ciudad.toLowerCase()] = c; });
+    lote.forEach((it, idx) => {
+      const cNom = String(it.ciudad || it.nombre).trim();
+      if (!mapa[cNom.toLowerCase()]) {
+        const itemObj = {
+          id: Date.now() + idx,
+          ciudad: cNom,
+          departamento: it.departamento ? String(it.departamento).trim() : null,
+          detalle: it.detalle ? String(it.detalle).trim() : null,
+          created_at: new Date().toISOString()
+        };
+        mapa[cNom.toLowerCase()] = itemObj;
+        actuales.push(itemObj);
+      }
+    });
+
+    await guardarCiudadesCloud(actuales);
+    return { ok: true, ciudades: actuales };
+  }
+
+  if ((m = path.match(/^\/api\/ciudades\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
+    const targetId = m[1];
+    if (method === 'DELETE') {
+      try {
+        await supabase.from('ciudades').delete().eq('id', targetId);
+      } catch {
+        // Fallback
+      }
+      const actuales = await obtenerCiudadesCloud(true);
+      const filtrados = actuales.filter((c) => String(c.id) !== String(targetId));
+      await guardarCiudadesCloud(filtrados);
+      return { ok: true };
+    }
+
+    const { ciudad, departamento, detalle } = body || {};
+    if (!ciudad || !String(ciudad).trim()) throw new Error('El nombre de la ciudad o destino es obligatorio.');
+    const nomCiudad = String(ciudad).trim();
+    const dep = departamento ? String(departamento).trim() : null;
+    const det = detalle ? String(detalle).trim() : null;
+
+    let itemActualizado = null;
+    try {
+      const { data, error } = await supabase.from('ciudades').update({
+        ciudad: nomCiudad,
+        departamento: dep,
+        detalle: det
+      }).eq('id', targetId).select();
+      if (!error && data && data.length) itemActualizado = data[0];
+    } catch {
+      // Fallback
+    }
+
+    if (!itemActualizado) {
+      itemActualizado = {
+        id: isNaN(Number(targetId)) ? targetId : Number(targetId),
+        ciudad: nomCiudad,
+        departamento: dep,
+        detalle: det,
+        created_at: new Date().toISOString()
+      };
+    }
+
+    const actuales = await obtenerCiudadesCloud(true);
+    const actualizados = actuales.map((c) => (String(c.id) === String(targetId) ? itemActualizado : c));
+    await guardarCiudadesCloud(actualizados);
+    return { ok: true, ciudad: itemActualizado };
+  }
+
   // ----- Ubicaciones -----
   if (method === 'GET' && path === '/api/ubicaciones') {
     const { data, error } = await supabase
@@ -840,15 +1217,158 @@ async function route(method, rawPath, body) {
     return { ok: true, entrega: data[0] };
   }
 
+  // ----- Registro de entregas (listado de clientes y lugares de recogida) -----
+  if (method === 'GET' && path === '/api/registro-entregas') {
+    const desde = (q.get('desde') || '').trim();
+    const hasta = (q.get('hasta') || '').trim();
+    let consulta = supabase.from('registro_entregas').select('*');
+    if (desde) consulta = consulta.gte('fecha_entrega', desde);
+    if (hasta) consulta = consulta.lte('fecha_entrega', hasta);
+    const { data, error } = await consulta
+      .order('fecha_entrega', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(2000);
+    if (error) throw new Error(esFaltaTabla(error) ? AVISO_TABLA_REGISTRO_ENTREGAS : error.message);
+    const normalizados = (data || []).map((r) => {
+      let tipo = r.tipo;
+      let destino = r.destino;
+      if (!tipo) {
+        const match = String(r.observacion || '').match(/\[DESTINO:\s*([^\]]+)\]/i);
+        if (match) {
+          tipo = 'INT';
+          destino = match[1].trim();
+        } else {
+          tipo = 'LP';
+        }
+      }
+      return { ...r, tipo, destino };
+    });
+    return { items: normalizados };
+  }
+  if (method === 'POST' && path === '/api/registro-entregas') {
+    let payload = payloadRegistroEntrega(body);
+    let res = await supabase.from('registro_entregas').insert(payload).select().single();
+    let data = res.data;
+    let error = res.error;
+
+    // 1) Si falla por clave foránea inválida de cliente_id, reintentar con cliente_id: null
+    if (error && (error.code === '23503' || /foreign key.*cliente_id/i.test(error.message))) {
+      payload = { ...payload, cliente_id: null };
+      res = await supabase.from('registro_entregas').insert(payload).select().single();
+      data = res.data;
+      error = res.error;
+    }
+
+    // 2) Si falla porque en Supabase aún no existen las columnas 'tipo' o 'destino'
+    if (error && (/column.*tipo|column.*destino|schema cache/i.test(error.message) || error.code === '42703')) {
+      const payloadFallback = { ...payload };
+      if (payloadFallback.tipo === 'INT' || payloadFallback.destino) {
+        payloadFallback.observacion = `[DESTINO: ${payloadFallback.destino || 'INTERIOR'}] ${payloadFallback.observacion || ''}`.trim();
+      }
+      delete payloadFallback.tipo;
+      delete payloadFallback.destino;
+      res = await supabase.from('registro_entregas').insert(payloadFallback).select().single();
+      data = res.data;
+      error = res.error;
+    }
+
+    // 3) Si falla por restricción NOT NULL en lugar_entrega_id (para entregas al interior)
+    if (error && (error.code === '23502' || /violates not-null.*lugar_entrega_id/i.test(error.message))) {
+      const { data: lugares } = await supabase.from('lugares_entrega').select('id').limit(1);
+      const primerLugarId = lugares && lugares[0] ? lugares[0].id : null;
+      if (primerLugarId) {
+        const payloadConLugar = { ...payload, lugar_entrega_id: primerLugarId };
+        delete payloadConLugar.tipo;
+        delete payloadConLugar.destino;
+        res = await supabase.from('registro_entregas').insert(payloadConLugar).select().single();
+        data = res.data;
+        error = res.error;
+      }
+    }
+
+    if (error) {
+      if (/tipo|destino/i.test(error.message) || error.code === '42703') {
+        throw new Error('Faltan columnas en Supabase. Ejecuta: alter table registro_entregas add column if not exists tipo text not null default \'LP\', add column if not exists destino text; en el SQL Editor.');
+      }
+      throw new Error(esFaltaTabla(error) ? AVISO_TABLA_REGISTRO_ENTREGAS : (error.message || 'Error al guardar entrega en Supabase.'));
+    }
+    return { ok: true, registro: data };
+  }
+  if ((m = path.match(/^\/api\/registro-entregas\/([^/]+)\/entregar$/)) && method === 'POST') {
+    const fecha = body && body.fecha_entrega && String(body.fecha_entrega).trim()
+      ? String(body.fecha_entrega).trim()
+      : hoyLocalISO();
+    const { data, error } = await supabase
+      .from('registro_entregas')
+      .update({ estado: 'E', fecha_entrega: fecha })
+      .eq('id', m[1])
+      .select();
+    if (error) throw new Error(esFaltaTabla(error) ? AVISO_TABLA_REGISTRO_ENTREGAS : error.message);
+    if (!data || !data.length) throw new Error('Entrega no encontrada o sin permiso para actualizarla.');
+    return { ok: true, registro: data[0] };
+  }
+  if ((m = path.match(/^\/api\/registro-entregas\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
+    if (method === 'DELETE') {
+      const { data, error } = await supabase.from('registro_entregas').delete().eq('id', m[1]).select();
+      if (error) throw new Error(esFaltaTabla(error) ? AVISO_TABLA_REGISTRO_ENTREGAS : error.message);
+      if (!data || !data.length) throw new Error('Entrega no encontrada o sin permiso para eliminarla.');
+      return { ok: true, registro: data[0] };
+    }
+    let payload = payloadRegistroEntrega(body);
+    let res = await supabase.from('registro_entregas').update(payload).eq('id', m[1]).select();
+    let data = res.data;
+    let error = res.error;
+
+    // 1) Si falla por clave foránea inválida de cliente_id
+    if (error && (error.code === '23503' || /foreign key.*cliente_id/i.test(error.message))) {
+      payload = { ...payload, cliente_id: null };
+      res = await supabase.from('registro_entregas').update(payload).eq('id', m[1]).select();
+      data = res.data;
+      error = res.error;
+    }
+
+    // 2) Si faltan las columnas 'tipo' o 'destino'
+    if (error && (/column.*tipo|column.*destino|schema cache/i.test(error.message) || error.code === '42703')) {
+      const payloadFallback = { ...payload };
+      if (payloadFallback.tipo === 'INT' || payloadFallback.destino) {
+        payloadFallback.observacion = `[DESTINO: ${payloadFallback.destino || 'INTERIOR'}] ${payloadFallback.observacion || ''}`.trim();
+      }
+      delete payloadFallback.tipo;
+      delete payloadFallback.destino;
+      res = await supabase.from('registro_entregas').update(payloadFallback).eq('id', m[1]).select();
+      data = res.data;
+      error = res.error;
+    }
+
+    // 3) Si falla por restricción NOT NULL en lugar_entrega_id
+    if (error && (error.code === '23502' || /violates not-null.*lugar_entrega_id/i.test(error.message))) {
+      const { data: lugares } = await supabase.from('lugares_entrega').select('id').limit(1);
+      const primerLugarId = lugares && lugares[0] ? lugares[0].id : null;
+      if (primerLugarId) {
+        const payloadConLugar = { ...payload, lugar_entrega_id: primerLugarId };
+        delete payloadConLugar.tipo;
+        delete payloadConLugar.destino;
+        res = await supabase.from('registro_entregas').update(payloadConLugar).eq('id', m[1]).select();
+        data = res.data;
+        error = res.error;
+      }
+    }
+
+    if (error) throw new Error(esFaltaTabla(error) ? AVISO_TABLA_REGISTRO_ENTREGAS : (error.message || 'Error al actualizar entrega.'));
+    if (!data || !data.length) throw new Error('Entrega no encontrada o sin permiso para actualizarla.');
+    return { ok: true, registro: data[0] };
+  }
+
   // ----- Ventas -----
   if (method === 'GET' && path === '/api/ventas') {
     const fardo_id = q.get('fardo_id');
-    if (!fardo_id) return { items: [] };
+    if (!fardo_id) return { items: [], pagosTabla: true };
     const { data: prods, error } = await supabase
       .from('productos_fardo').select('*').eq('fardo_id', fardo_id).order('correlativo');
     if (error) throw new Error(error.message);
     const ids = (prods || []).map((p) => p.id);
     const mapaV = {};
+    let pagosTabla = true;
     if (ids.length) {
       const [{ data: ventas }, { data: ubis }] = await Promise.all([
         supabase.from('ventas').select('*').in('producto_id', ids),
@@ -856,12 +1376,42 @@ async function route(method, rawPath, body) {
       ]);
       const mapaU = {};
       (ubis || []).forEach((x) => { mapaU[x.id] = x.detalle ? x.lugar + ' — ' + x.detalle : x.lugar; });
+
+      // Historial de abonos (si la tabla aún no existe, la app sigue funcionando)
+      const ventaIds = (ventas || []).map((v) => v.id);
+      let pagos = [];
+      if (ventaIds.length) {
+        const { data: pagosData, error: pagosError } = await supabase
+          .from('pagos_venta').select('*')
+          .in('venta_id', ventaIds)
+          .order('fecha_pago', { ascending: false })
+          .order('id', { ascending: false });
+        if (pagosError) {
+          if (!esFaltaTabla(pagosError)) throw new Error(pagosError.message);
+          pagosTabla = false;
+        } else {
+          pagos = pagosData || [];
+        }
+      }
+      const mapaPagos = {};
+      pagos.forEach((p) => { (mapaPagos[p.venta_id] || (mapaPagos[p.venta_id] = [])).push(p); });
+
       (ventas || []).forEach((v) => {
-        mapaV[v.producto_id] = { ...v, ubicacion: v.ubicacion_id ? (mapaU[v.ubicacion_id] || '—') : '—' };
+        const listaPagos = mapaPagos[v.id] || [];
+        const abonado = redondear2(listaPagos.reduce((s, p) => s + (Number(p.monto) || 0), 0));
+        const saldo = calcularSaldo(v.precio_venta, v.deposito_cliente, abonado);
+        mapaV[v.producto_id] = {
+          ...v,
+          ubicacion: v.ubicacion_id ? (mapaU[v.ubicacion_id] || '—') : '—',
+          pagos: listaPagos,
+          abonado,
+          saldo
+        };
       });
     }
     return {
-      items: (prods || []).map((p) => ({ ...p, foto_url: fotoUrl(p.foto_ruta), venta: mapaV[p.id] || null }))
+      items: (prods || []).map((p) => ({ ...p, foto_url: fotoUrl(p.foto_ruta), venta: mapaV[p.id] || null })),
+      pagosTabla
     };
   }
   if (method === 'POST' && path === '/api/ventas') {
@@ -885,6 +1435,78 @@ async function route(method, rawPath, body) {
     const { data, error } = await supabase.from('ventas').upsert(payload, { onConflict: 'producto_id' }).select().single();
     if (error) throw new Error(error.message);
     return { ok: true, venta: data };
+  }
+
+  // Cambiar únicamente el estado de una venta (P = Pendiente, D = Deuda, E = Entregado)
+  if ((m = path.match(/^\/api\/ventas\/([^/]+)\/estado$/)) && (method === 'POST' || method === 'PATCH')) {
+    const estado = body && body.estado;
+    if (!['P', 'D', 'E'].includes(estado)) throw new Error('Estado inválido (P, D o E).');
+    const cambios = { estado };
+    if (estado === 'E') {
+      const fecha = body && body.fecha_entrega && String(body.fecha_entrega).trim()
+        ? String(body.fecha_entrega).trim()
+        : hoyLocalISO();
+      cambios.fecha_entrega = fecha;
+    }
+    const { data, error } = await supabase.from('ventas').update(cambios).eq('id', m[1]).select();
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Venta no encontrada o sin permiso para actualizarla.');
+    return { ok: true, venta: data[0] };
+  }
+
+  // ----- Abonos de ventas en deuda -----
+  if (method === 'POST' && path === '/api/pagos-venta') {
+    const { venta_id, fecha_pago, monto, nota } = body || {};
+    if (!venta_id) throw new Error('Falta la venta a la que se aplicará el abono.');
+    const montoNum = Number(monto);
+    if (!Number.isFinite(montoNum) || montoNum <= 0) throw new Error('El monto del abono debe ser mayor a 0.');
+    const fecha = fecha_pago ? String(fecha_pago).trim() : hoyLocalISO();
+
+    const { data: venta, error: vErr } = await supabase
+      .from('ventas').select('*').eq('id', venta_id).single();
+    if (vErr || !venta) throw new Error('Venta no encontrada.');
+
+    const { data: pagosPrevios, error: pErr } = await supabase
+      .from('pagos_venta').select('monto').eq('venta_id', venta_id);
+    if (pErr) throw new Error(esFaltaTabla(pErr) ? AVISO_TABLA_PAGOS : pErr.message);
+
+    const abonadoPrevio = (pagosPrevios || []).reduce((s, p) => s + (Number(p.monto) || 0), 0);
+    const saldoPrevio = calcularSaldo(venta.precio_venta, venta.deposito_cliente, abonadoPrevio);
+    if (saldoPrevio <= 0) throw new Error('Esta venta ya no tiene saldo pendiente.');
+    if (montoNum > saldoPrevio + 0.005) {
+      throw new Error('El monto (Bs ' + redondear2(montoNum).toFixed(2) + ') supera el saldo pendiente (Bs ' + saldoPrevio.toFixed(2) + ').');
+    }
+
+    const { data, error } = await supabase.from('pagos_venta').insert({
+      venta_id,
+      producto_id: venta.producto_id ?? null,
+      fecha_pago: fecha,
+      monto: montoNum,
+      nota: nota ? String(nota).trim() : null
+    }).select().single();
+    if (error) throw new Error(esFaltaTabla(error) ? AVISO_TABLA_PAGOS : error.message);
+
+    return {
+      ok: true,
+      pago: data,
+      abonado: redondear2(abonadoPrevio + montoNum),
+      saldo: Math.max(0, redondear2(saldoPrevio - montoNum))
+    };
+  }
+
+  if ((m = path.match(/^\/api\/pagos-venta\/([^/]+)$/)) && method === 'DELETE') {
+    const { data, error } = await supabase.from('pagos_venta').delete().eq('id', m[1]).select();
+    if (error) throw new Error(esFaltaTabla(error) ? AVISO_TABLA_PAGOS : error.message);
+    if (!data || !data.length) throw new Error('Abono no encontrado o sin permiso para eliminarlo.');
+    return { ok: true, pago: data[0] };
+  }
+
+  // Marcar producto como "Sin Vender": elimina la venta (y sus abonos por cascada)
+  if ((m = path.match(/^\/api\/ventas\/producto\/([^/]+)$/)) && method === 'DELETE') {
+    const { data, error } = await supabase.from('ventas').delete().eq('producto_id', m[1]).select();
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('No se encontró una venta registrada para este producto.');
+    return { ok: true, venta: data[0] };
   }
   if (method === 'GET' && path === '/api/ventas/por-celular') {
     const celular = q.get('celular');
@@ -1059,6 +1681,60 @@ async function route(method, rawPath, body) {
       total_deposito: ventas.reduce((s, v) => s + (Number(v.deposito_cliente) || 0), 0),
       total_venta: ventas.reduce((s, v) => s + (Number(v.precio_venta) || 0), 0)
     };
+  }
+
+  // ----- Cobranza de deudas por fecha de pago -----
+  if (method === 'GET' && path === '/api/reportes/pagos') {
+    const d = (q.get('desde') || '').trim();
+    const h = (q.get('hasta') || '').trim() || d;
+    if (!d) return { items: [], total: 0, faltaTabla: false };
+    const { data: pagos, error } = await supabase
+      .from('pagos_venta').select('*')
+      .gte('fecha_pago', d).lte('fecha_pago', h)
+      .order('fecha_pago').order('id').limit(1000);
+    if (error) {
+      if (esFaltaTabla(error)) return { items: [], total: 0, faltaTabla: true };
+      throw new Error(error.message);
+    }
+    const lista = pagos || [];
+    if (!lista.length) return { items: [], total: 0, faltaTabla: false };
+
+    const ventaIds = [...new Set(lista.map((p) => p.venta_id))];
+    const { data: ventas } = await supabase.from('ventas').select('*').in('id', ventaIds);
+    const mapaV = {};
+    (ventas || []).forEach((v) => { mapaV[v.id] = v; });
+
+    const prodIds = [...new Set((ventas || []).map((v) => v.producto_id).filter(Boolean))];
+    const { data: prods } = prodIds.length
+      ? await supabase.from('productos_fardo').select('*').in('id', prodIds)
+      : { data: [] };
+    const mapaP = {};
+    (prods || []).forEach((p) => { mapaP[p.id] = p; });
+
+    const fardoIds = [...new Set((prods || []).map((p) => p.fardo_id).filter(Boolean))];
+    const { data: fardos } = fardoIds.length
+      ? await supabase.from('fardos').select('id, codigo_fardo, nombre_fardo').in('id', fardoIds)
+      : { data: [] };
+    const mapaF = {};
+    (fardos || []).forEach((f) => { mapaF[f.id] = f; });
+
+    const items = lista.map((p) => {
+      const v = mapaV[p.venta_id] || {};
+      const pr = mapaP[v.producto_id] || {};
+      const f = mapaF[pr.fardo_id] || {};
+      return {
+        id: p.id,
+        venta_id: p.venta_id,
+        fecha_pago: p.fecha_pago,
+        monto: Number(p.monto) || 0,
+        nota: p.nota || '',
+        cliente: v.nombre_cliente || '',
+        celular: v.celular_cliente || '',
+        codigo: pr.nombre_foto || '',
+        fardo: f.codigo_fardo ? (f.codigo_fardo + ' — ' + (f.nombre_fardo || '')) : ''
+      };
+    });
+    return { items, total: redondear2(items.reduce((s, i) => s + i.monto, 0)), faltaTabla: false };
   }
 
   throw new Error('Ruta no soportada: ' + method + ' ' + path);
