@@ -73,6 +73,30 @@ img { max-width: 100%; }
 .success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
 .error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 
+/* Aviso flotante: se ve por encima de modales */
+.aviso-flotante {
+  position: fixed;
+  top: calc(var(--top-h) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  width: min(620px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.aviso-flotante .success,
+.aviso-flotante .error {
+  position: static;
+  top: auto;
+  margin: 0;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+  font-weight: 600;
+  animation: avisoEntrada 0.2s ease-out;
+}
+@keyframes avisoEntrada {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ===== Forms ===== */
 form.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 form.grid1 { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
@@ -84,6 +108,26 @@ input, select, textarea {
   font-size: 16px; background: #fff; color: var(--text); min-height: 48px;
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
+
+/* Campos obligatorios vacíos: resaltados para que se vean a simple vista */
+input:required:invalid,
+select:required:invalid,
+textarea:required:invalid {
+  background-color: #fff1f2;
+  border-color: #f43f5e;
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, .14);
+}
+input:required:invalid:focus,
+select:required:invalid:focus,
+textarea:required:invalid:focus {
+  border-color: #e11d48;
+  box-shadow: 0 0 0 4px rgba(244, 63, 94, .25);
+}
+input:required:invalid::placeholder,
+textarea:required:invalid::placeholder { color: #fb7185; opacity: 1; }
+label:has(+ input:required:invalid),
+label:has(+ select:required:invalid),
+label:has(+ textarea:required:invalid) { color: #be123c; }
 input[type="file"] { padding: 10px; }
 select.select-estado {
   width: auto; min-width: 118px; min-height: 36px; padding: 6px 8px;

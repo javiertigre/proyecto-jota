@@ -34,6 +34,20 @@ const nombreCompleto = (c) => [c?.nombre, c?.apellido_paterno, c?.apellido_mater
 
 const textoCliente = (c) => nombreCompleto(c) + (c?.celular ? ' — ' + c.celular : '');
 
+// Reporte interior: nombre completo y del último apellido solo la inicial + punto.
+const nombreCortoReporte = (nombre) => {
+  const partes = String(nombre ?? '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length < 2) return partes.join(' ');
+  const ultimo = partes.pop();
+  return `${partes.join(' ')} ${ultimo.charAt(0).toUpperCase()}.`;
+};
+
+// Clave del celular para detectar duplicados (solo dígitos, últimos 8).
+const claveCelular = (valor) => {
+  const digitos = String(valor ?? '').replace(/\D/g, '');
+  return digitos.length > 8 ? digitos.slice(-8) : digitos;
+};
+
 const textoLugar = (l) => l
   ? l.lugar + ' — ' + l.ciudad + (l.detalle ? ' (' + l.detalle + ')' : '')
   : '';
@@ -265,6 +279,23 @@ export default function SolicitudesEntrega({ avisar }) {
       avisar('error', 'Elige la fecha de entrega.');
       return;
     }
+    const clave = claveCelular(form.cliente_celular);
+    const idCliente = form.cliente_id ? String(form.cliente_id) : '';
+    if (clave.length >= 7 || idCliente) {
+      const duplicado = registros.find((r) =>
+        String(r.id) !== String(form.id || '') &&
+        r.fecha_entrega === form.fecha_entrega &&
+        (
+          (clave.length >= 7 && claveCelular(r.cliente_celular) === clave) ||
+          (idCliente && String(r.cliente_id || '') === idCliente)
+        )
+      );
+      if (duplicado) {
+        avisar('error', 'Ya existe una entrega para ' + (duplicado.cliente_nombre || form.cliente_nombre) +
+          ' en esa fecha. No se puede registrar dos veces el mismo celular.');
+        return;
+      }
+    }
     setGuardando(true);
     try {
       const payload = {
@@ -368,7 +399,7 @@ export default function SolicitudesEntrega({ avisar }) {
       const estilo = (c) => ciudad === c && fondo ? ` style="background:${fondo}"` : '';
       return `<tr>
         <td class="col-n">${i + 1}</td>
-        <td class="col-cliente">${escH(r.cliente_nombre)}</td>
+        <td class="col-cliente">${escH(nombreCortoReporte(r.cliente_nombre))}</td>
         <td class="col-lugar"${estilo('elalto')}>${ciudad === 'elalto' ? lugar : ''}</td>
         <td class="col-lugar"${estilo('lapaz')}>${ciudad === 'lapaz' ? lugar : ''}</td>
       </tr>`;
@@ -383,11 +414,14 @@ export default function SolicitudesEntrega({ avisar }) {
       avisar('error', 'Permite las ventanas emergentes para imprimir el reporte.');
       return;
     }
-    w.document.write(`<!doctype html><html><head><title>ENTREGAS DEPARTAMENTO DE LA PAZ</title><style>
+    w.document.write(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>ENTREGAS DEPARTAMENTO DE LA PAZ</title><style>
       @page{size:A4 portrait;margin:14mm 13mm}
       *{box-sizing:border-box}
       body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;margin:0;padding:18px 22px;-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#eef2f7}
-      .reporte{max-width:980px;margin:0 auto;background:#fff;padding:26px 28px;border-radius:14px;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+      .reporte{position:relative;overflow:hidden;max-width:980px;margin:0 auto;background:#fff;padding:26px 28px;border-radius:14px;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+      .fondo-logo{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:0}
+      .fondo-logo img{display:block;width:78%;max-width:680px;height:auto;opacity:.09;filter:grayscale(15%)}
+      .reporte > *:not(.fondo-logo){position:relative;z-index:1}
       .cabecera{display:flex;align-items:center;gap:18px;padding-bottom:14px}
       .logo-box{width:88px;height:88px;border-radius:12px;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff;flex:0 0 auto}
       .logo-box img{display:block;max-width:100%;max-height:100%;width:auto;height:auto}
@@ -404,8 +438,8 @@ export default function SolicitudesEntrega({ avisar }) {
       table{width:100%;border-collapse:collapse;font-size:13px}
       th,td{border:1px solid #d1d5db;padding:9px 10px;vertical-align:middle;text-align:left}
       thead th{background:#111827;color:#fff;font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:700}
-      thead .grupo-lugar{background:#b45309;border-color:#92400e;text-align:center}
-      thead .sub-lugar{background:#fef3c7;color:#78350f;text-align:center;border-color:#d97706}
+      thead .grupo-lugar{background:#b45309;border-color:#92400e;text-align:center;font-size:16px;letter-spacing:.18em;padding:12px 8px}
+      thead .sub-lugar{background:#fef3c7;color:#78350f;text-align:center;border-color:#d97706;font-size:18px;letter-spacing:.14em;font-weight:800;padding:12px 8px}
       .col-n{width:52px;text-align:center;color:#6b7280;font-weight:700}
       .col-cliente{font-weight:600}
       thead .th-cliente{text-align:center;vertical-align:middle;font-size:15px;letter-spacing:.14em}
@@ -420,9 +454,41 @@ export default function SolicitudesEntrega({ avisar }) {
       .no-print button{padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;border:0;border-radius:8px;background:#111827;color:#fff}
       .no-print button:disabled{opacity:.65;cursor:wait}
       .no-print .btn-imagen{background:#16a34a}
-      @media print{.no-print{display:none}body{padding:0;background:#fff}.reporte{max-width:none;padding:0;border-radius:0;box-shadow:none}.cabecera{padding-bottom:10px}}
+      @media screen and (max-width:640px){
+        body{padding:8px}
+        .reporte{padding:14px 12px;border-radius:10px}
+        .fondo-logo img{width:92%;opacity:.07}
+        .cabecera{flex-wrap:wrap;justify-content:center;gap:10px;text-align:center}
+        .logo-box{width:60px;height:60px}
+        .titulo{flex:1 1 100%;order:3}
+        .sello{display:none}
+        h1{font-size:15px;letter-spacing:.01em;line-height:1.25}
+        .marca{font-size:8px;letter-spacing:.16em}
+        .fecha{font-size:11px;margin-top:5px}
+        .barra{height:3px;margin-bottom:12px}
+        .resumen{flex-wrap:wrap;gap:6px;margin-bottom:12px}
+        .dato{flex:1 1 calc(50% - 6px);padding:8px;border-radius:8px}
+        .dato span{font-size:8px;letter-spacing:.08em}
+        .dato strong{font-size:15px}
+        table{font-size:10px;table-layout:fixed}
+        th,td{padding:5px 4px;word-break:break-word;overflow-wrap:anywhere}
+        thead th{font-size:9px;letter-spacing:.03em}
+        thead .grupo-lugar{font-size:11px;letter-spacing:.06em;padding:7px 4px}
+        thead .sub-lugar{font-size:12px;letter-spacing:.05em;padding:7px 4px}
+        .col-n{width:26px;font-size:9px;padding:5px 2px}
+        .col-cliente{font-size:10px}
+        thead .th-cliente{font-size:12px;letter-spacing:.06em}
+        .col-lugar{font-size:9px}
+        .leyenda{font-size:9px;gap:8px}
+        .pie{flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px}
+        .generado{text-align:left}
+        .no-print{flex-direction:column;gap:8px;margin-top:16px}
+        .no-print button{width:100%}
+      }
+      @media print{.no-print{display:none}body{padding:0;background:#fff}.reporte{max-width:none;padding:0;border-radius:0;box-shadow:none;min-height:260mm}.cabecera{padding-bottom:10px}}
     </style></head><body>
       <main id="reporte" class="reporte">
+      <div class="fondo-logo" aria-hidden="true"><img src="${logoUrl}" alt=""></div>
       <header class="cabecera">
         <div class="logo-box"><img src="${logoUrl}" alt="Capricornio Detalles"></div>
         <div class="titulo">
@@ -531,10 +597,8 @@ export default function SolicitudesEntrega({ avisar }) {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
-    const filas = datosReporte.map((r, i) => `<tr>
-      <td class="col-n">${i + 1}</td>
-      <td class="col-cliente">${escH(r.cliente_nombre)}</td>
-      <td class="col-cel">${escH(r.cliente_celular || '—')}</td>
+    const filas = datosReporte.map((r) => `<tr>
+      <td class="col-cliente">${escH(nombreCortoReporte(r.cliente_nombre))}</td>
       <td class="col-destino"><strong>${escH(r.destino || '—')}</strong></td>
     </tr>`).join('');
     const fecha = fechaEnTexto(fechaFiltro || hoyISO());
@@ -547,11 +611,14 @@ export default function SolicitudesEntrega({ avisar }) {
       avisar('error', 'Permite las ventanas emergentes para imprimir el reporte.');
       return;
     }
-    w.document.write(`<!doctype html><html><head><title>ENTREGAS AL INTERIOR</title><style>
+    w.document.write(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>ENTREGAS AL INTERIOR</title><style>
       @page{size:A4 portrait;margin:14mm 13mm}
       *{box-sizing:border-box}
       body{font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;margin:0;padding:18px 22px;-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#eef2f7}
-      .reporte{max-width:980px;margin:0 auto;background:#fff;padding:26px 28px;border-radius:14px;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+      .reporte{position:relative;overflow:hidden;max-width:980px;margin:0 auto;background:#fff;padding:26px 28px;border-radius:14px;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+      .fondo-logo{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:0}
+      .fondo-logo img{display:block;width:78%;max-width:680px;height:auto;opacity:.09;filter:grayscale(15%)}
+      .reporte > *:not(.fondo-logo){position:relative;z-index:1}
       .cabecera{display:flex;align-items:center;gap:18px;padding-bottom:14px}
       .logo-box{width:88px;height:88px;border-radius:12px;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff;flex:0 0 auto}
       .logo-box img{display:block;max-width:100%;max-height:100%;width:auto;height:auto}
@@ -569,10 +636,8 @@ export default function SolicitudesEntrega({ avisar }) {
       th,td{border:1px solid #d1d5db;padding:9px 10px;vertical-align:middle;text-align:left}
       thead th{background:#111827;color:#fff;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700}
       thead .th-dest{background:#0d9488;text-align:center}
-      .col-n{width:48px;text-align:center;color:#6b7280;font-weight:700}
-      .col-cliente{font-weight:700;font-size:14px}
-      .col-cel{width:130px;text-align:center;font-size:13px;font-weight:600}
-      .col-destino{width:180px;text-align:center;color:#0f766e;font-size:14px;font-weight:700}
+      .col-cliente{font-weight:700;font-size:14px;width:60%}
+      .col-destino{width:40%;text-align:center;color:#0f766e;font-size:14px;font-weight:700}
       thead{display:table-header-group}tr{page-break-inside:avoid}
       .pie{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-top:14px}
       .generado{font-size:9px;color:#9ca3af;text-align:right;line-height:1.4}
@@ -580,9 +645,36 @@ export default function SolicitudesEntrega({ avisar }) {
       .no-print button{padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;border:0;border-radius:8px;background:#111827;color:#fff}
       .no-print button:disabled{opacity:.65;cursor:wait}
       .no-print .btn-imagen{background:#16a34a}
-      @media print{.no-print{display:none}body{padding:0;background:#fff}.reporte{max-width:none;padding:0;border-radius:0;box-shadow:none}.cabecera{padding-bottom:10px}}
+      @media screen and (max-width:640px){
+        body{padding:8px}
+        .reporte{padding:14px 12px;border-radius:10px}
+        .fondo-logo img{width:92%;opacity:.07}
+        .cabecera{flex-wrap:wrap;justify-content:center;gap:10px;text-align:center}
+        .logo-box{width:60px;height:60px}
+        .titulo{flex:1 1 100%;order:3}
+        .sello{display:none}
+        h1{font-size:16px;letter-spacing:.02em;line-height:1.25}
+        .marca{font-size:8px;letter-spacing:.16em}
+        .fecha{font-size:11px;margin-top:5px}
+        .barra{height:3px;margin-bottom:12px}
+        .resumen{flex-wrap:wrap;gap:6px;margin-bottom:12px}
+        .dato{flex:1 1 calc(50% - 6px);padding:8px;border-radius:8px}
+        .dato span{font-size:8px;letter-spacing:.08em}
+        .dato strong{font-size:15px}
+        table{font-size:11px;table-layout:fixed}
+        th,td{padding:6px 5px;word-break:break-word;overflow-wrap:anywhere}
+        thead th{font-size:9px;letter-spacing:.05em}
+        .col-cliente{width:58%;font-size:11px}
+        .col-destino{width:42%;font-size:11px}
+        .pie{flex-direction:column;align-items:flex-start;gap:6px;margin-top:10px}
+        .generado{text-align:left}
+        .no-print{flex-direction:column;gap:8px;margin-top:16px}
+        .no-print button{width:100%}
+      }
+      @media print{.no-print{display:none}body{padding:0;background:#fff}.reporte{max-width:none;padding:0;border-radius:0;box-shadow:none;min-height:260mm}.cabecera{padding-bottom:10px}}
     </style></head><body>
       <main id="reporte" class="reporte">
+      <div class="fondo-logo" aria-hidden="true"><img src="${logoUrl}" alt=""></div>
       <header class="cabecera">
         <div class="logo-box"><img src="${logoUrl}" alt="Capricornio Detalles"></div>
         <div class="titulo">
@@ -602,9 +694,7 @@ export default function SolicitudesEntrega({ avisar }) {
       <table>
         <thead>
           <tr>
-            <th class="col-n">N°</th>
             <th>BELLIT@S (CLIENTE)</th>
-            <th>CELULAR</th>
             <th class="th-dest">DESTINO</th>
           </tr>
         </thead>

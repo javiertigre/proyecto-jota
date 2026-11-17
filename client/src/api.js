@@ -80,6 +80,45 @@ function payloadRegistroEntrega(body) {
   };
 }
 
+// Clave del celular para detectar duplicados: solo dígitos, sin prefijo país (últimos 8).
+function claveCelular(valor) {
+  const digitos = String(valor || '').replace(/\D/g, '');
+  return digitos.length > 8 ? digitos.slice(-8) : digitos;
+}
+
+// Impide registrar dos veces el mismo celular: en la misma fecha o si ya tiene una entrega pendiente.
+async function validarCelularUnico(payload, excluirId) {
+  const clave = claveCelular(payload.cliente_celular);
+  const mismoCliente = payload.cliente_id !== null && payload.cliente_id !== undefined
+    ? String(payload.cliente_id)
+    : '';
+  if (clave.length < 7 && !mismoCliente) return;
+  const { data, error } = await supabase
+    .from('registro_entregas')
+    .select('id, cliente_id, cliente_nombre, cliente_celular, fecha_entrega, estado')
+    .order('fecha_entrega', { ascending: false })
+    .limit(3000);
+  if (error) return; // si no se puede verificar, no bloqueamos el guardado
+  const duplicado = (data || []).find((r) => {
+    if (String(r.id) === String(excluirId || '')) return false;
+    const mismaFecha = String(r.fecha_entrega || '') === String(payload.fecha_entrega || '');
+    const pendiente = r.estado !== 'E';
+    const mismoCelular = claveCelular(r.cliente_celular) === clave;
+    const mismoIdCliente = mismoCliente && String(r.cliente_id || '') === mismoCliente;
+    return (mismoCelular || mismoIdCliente) && (mismaFecha || pendiente);
+  });
+  if (duplicado) {
+    throw new Error(
+      'Ya existe una entrega registrada con el celular ' + String(payload.cliente_celular).trim() +
+      (duplicado.cliente_nombre ? ' (' + duplicado.cliente_nombre + ')' : '') +
+      (String(duplicado.fecha_entrega || '') === String(payload.fecha_entrega || '')
+        ? ' en esta fecha.'
+        : ' con estado pendiente (fecha ' + String(duplicado.fecha_entrega || '') + ').') +
+      ' No se puede registrar dos veces el mismo celular.'
+    );
+  }
+}
+
 // Comprimir foto en el navegador: máx 800px, JPEG calidad 0.6 (antes lo hacía sharp)
 async function comprimirFoto(file) {
   try {
@@ -1247,6 +1286,7 @@ async function route(method, rawPath, body) {
   }
   if (method === 'POST' && path === '/api/registro-entregas') {
     let payload = payloadRegistroEntrega(body);
+    await validarCelularUnico(payload, null);
     let res = await supabase.from('registro_entregas').insert(payload).select().single();
     let data = res.data;
     let error = res.error;
@@ -1315,6 +1355,7 @@ async function route(method, rawPath, body) {
       return { ok: true, registro: data[0] };
     }
     let payload = payloadRegistroEntrega(body);
+    await validarCelularUnico(payload, m[1]);
     let res = await supabase.from('registro_entregas').update(payload).eq('id', m[1]).select();
     let data = res.data;
     let error = res.error;

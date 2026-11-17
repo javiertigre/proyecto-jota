@@ -160,8 +160,11 @@ export default function App() {
         </div>
       </div>
 
-      {msg?.tipo === 'exito' && <p className="success">{msg.texto}</p>}
-      {msg?.tipo === 'error' && <p className="error">{msg.texto}</p>}
+      {msg && (
+        <div className="aviso-flotante" role="status" aria-live="polite">
+          <p className={msg.tipo === 'exito' ? 'success' : 'error'}>{msg.texto}</p>
+        </div>
+      )}
 
       {esAdmin && tab === 'config' && (
         <div className="card">
