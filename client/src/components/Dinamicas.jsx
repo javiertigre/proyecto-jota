@@ -838,6 +838,32 @@ export default function Dinamicas({ avisar }) {
     }
   };
 
+  const enviarNumerosWhatsApp = (x) => {
+    const cel = soloDigitos(x.celular_cliente);
+    if (!cel) {
+      avisar('error', 'El cliente no tiene un número de celular registrado.');
+      return;
+    }
+
+    const tickets = desglosarTickets([x]).map((t) => '#' + t.numeroTexto);
+    if (tickets.length === 0) {
+      avisar('error', 'Este registro no tiene números de ticket asignados.');
+      return;
+    }
+
+    const mensaje =
+      'Buena Noche Caserit@, El presente mensaje es para agradecerle por sus compras que realizo en nuestra tienda virtual Capricornio. ' +
+      'Conforme la dinamica en la que estamos BLACK FRIDAY, por cada 40Bs. de sus compritas, se le asigno los siguiente numero: ' +
+      tickets.join(', ') +
+      '. Estos numeros son para el sorteo del dia VIERNES 27 de Noviembre a partir de las 20:30, recuerde el unico requisito es estar presente en el LIVE. ' +
+      'Tenga un reparador sueño.';
+
+    // Si el número no incluye código de país, se asume Bolivia (591)
+    const telefono = cel.length === 8 ? '591' + cel : cel;
+
+    window.open('https://wa.me/' + telefono + '?text=' + encodeURIComponent(mensaje), '_blank');
+  };
+
   const normalizarTelefono = (tel) => String(tel || '').replace(/[^0-9]/g, '');
 
   const coincidenciasTicket = busquedaTicket.trim()
@@ -2145,6 +2171,23 @@ export default function Dinamicas({ avisar }) {
                           title="Cambiar de cliente para los tickets de este registro"
                         >
                           🔄 Cambiar Cliente
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => enviarNumerosWhatsApp(x)}
+                          title="Enviar por WhatsApp los números de ticket asignados a este cliente"
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            background: '#22c55e',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: 6,
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          📲 Enviar Numeros
                         </button>
                         <button className="btn-edit" onClick={() => editar(x)}>Editar</button>
                         <button className="btn-del" onClick={() => eliminar(x)}>Eliminar</button>
