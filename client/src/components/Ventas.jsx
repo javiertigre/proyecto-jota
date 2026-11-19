@@ -8,6 +8,7 @@ const hoyISO = () => {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 };
 const dinero = (n) => (Number(n) || 0).toFixed(2);
+const soloDigitos = (v) => String(v || '').replace(/\D/g, '');
 
 const formVacio = {
   fecha_venta: '', precio_venta: '', deposito_cliente: '', celular_cliente: '',
@@ -102,21 +103,25 @@ export default function Ventas({ fardos, avisar }) {
 
   const cambiar = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
-  // Al poner el celular: buscar venta anterior (estado != E) y autocompletar
+  // Al poner el celular: si existe en nuestras bases, autocompletar. Si no, dejar vacío.
   const cambiarCelular = async (valor) => {
-    const cel = valor.trim();
-    setForm({ ...form, celular_cliente: valor });
-    if (!cel) { setClienteHint(''); return; }
+    const celLimpio = soloDigitos(valor);
+    setForm((f) => ({ ...f, celular_cliente: valor }));
+    if (!celLimpio) {
+      setForm((f) => ({ ...f, celular_cliente: valor, nombre_cliente: '', ciudad: '', ubicacion_id: '' }));
+      setClienteHint('');
+      return;
+    }
     setClienteHint('Buscando...');
     try {
-      const r = await api.get('/api/ventas/por-celular?celular=' + encodeURIComponent(cel));
+      const r = await api.get('/api/ventas/por-celular?celular=' + encodeURIComponent(valor.trim()));
       if (r.venta) {
         setForm((f) => ({
           ...f,
           celular_cliente: valor,
-          nombre_cliente: r.venta.nombre_cliente || f.nombre_cliente,
-          ciudad: r.venta.ciudad || f.ciudad,
-          ubicacion_id: r.venta.ubicacion_id ? String(r.venta.ubicacion_id) : f.ubicacion_id
+          nombre_cliente: r.venta.nombre_cliente || '',
+          ciudad: r.venta.ciudad || '',
+          ubicacion_id: r.venta.ubicacion_id ? String(r.venta.ubicacion_id) : ''
         }));
         setClienteHint('✓ Datos de venta anterior (pendiente/deuda).');
         return;
@@ -124,17 +129,19 @@ export default function Ventas({ fardos, avisar }) {
     } catch {
       // sigue con el registro de clientes
     }
-    const c = clientes.find((x) => x.celular === cel);
+    const c = clientes.find((x) => soloDigitos(x.celular) === celLimpio);
     if (c) {
       setForm((f) => ({
         ...f,
         celular_cliente: valor,
         nombre_cliente: [c.nombre, c.apellido_paterno, c.apellido_materno].filter(Boolean).join(' '),
-        ciudad: c.ciudad || f.ciudad
+        ciudad: c.ciudad || ''
       }));
       setClienteHint('✓ Cliente encontrado en el registro.');
     } else {
-      setClienteHint('Celular no registrado.');
+      // No está en la base de datos: no arrastrar nombres ni ciudades de búsquedas previas
+      setForm((f) => ({ ...f, celular_cliente: valor, nombre_cliente: '', ciudad: '', ubicacion_id: '' }));
+      setClienteHint('Celular no registrado. Completa el nombre y la ciudad del nuevo cliente.');
     }
   };
 

@@ -537,7 +537,7 @@ export default function Dinamicas({ avisar }) {
       if (!celLimpio) {
         setClienteHint('');
         setClienteInfo(null);
-        return { ...prev, celular_cliente: valor };
+        return { ...prev, celular_cliente: valor, nombre_completo: '' };
       }
 
       // 1. Buscar en Clientes registrados (comparando solo dígitos)
@@ -558,26 +558,11 @@ export default function Dinamicas({ avisar }) {
         };
       }
 
-      // 2. Buscar en dinámicas previas
-      const d = lista.find((x) => soloDigitos(x.celular_cliente) === celLimpio);
-      if (d && d.nombre_completo) {
-        setClienteHint('✓ Cliente de dinámicas: ' + d.nombre_completo + ' (se registrará en Clientes al guardar).');
-        setClienteInfo({
-          existente: false,
-          nombre: d.nombre_completo,
-          celular: valor,
-          ciudad: ''
-        });
-        return {
-          ...prev,
-          celular_cliente: valor,
-          nombre_completo: d.nombre_completo
-        };
-      }
-
-      setClienteHint('Celular nuevo: se registrará automáticamente en Clientes al guardar.');
+      // 2. Si no está en Clientes, no autocompletar con datos de otras búsquedas:
+      //    se dejan las casillas vacías para que se escriba el nuevo registro.
+      setClienteHint('Celular no registrado. Escribe el nombre completo del nuevo cliente.');
       setClienteInfo(null);
-      return { ...prev, celular_cliente: valor };
+      return { ...prev, celular_cliente: valor, nombre_completo: '' };
     });
   };
 
