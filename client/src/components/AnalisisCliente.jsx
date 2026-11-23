@@ -19,6 +19,9 @@ export default function AnalisisCliente({ avisar }) {
   const [historial, setHistorial] = useState(null);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
   const [guardandoEstado, setGuardandoEstado] = useState({});
+  const [ranking, setRanking] = useState([]);
+  const [resumenRanking, setResumenRanking] = useState({ clientes: 0, compras: 0, total_compra: 0, total_deposito: 0 });
+  const [cargandoRanking, setCargandoRanking] = useState(true);
 
   useEffect(() => {
     let activo = true;
@@ -30,6 +33,24 @@ export default function AnalisisCliente({ avisar }) {
         avisar('error', err.message);
       } finally {
         if (activo) setCargandoClientes(false);
+      }
+    })();
+    return () => { activo = false; };
+  }, []);
+
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const r = await api.get('/api/analisis/clientes');
+        if (activo) {
+          setRanking(r.ranking || []);
+          setResumenRanking(r.resumen || { clientes: 0, compras: 0, total_compra: 0, total_deposito: 0 });
+        }
+      } catch (err) {
+        if (activo) avisar('error', err.message);
+      } finally {
+        if (activo) setCargandoRanking(false);
       }
     })();
     return () => { activo = false; };
@@ -50,6 +71,7 @@ export default function AnalisisCliente({ avisar }) {
   });
 
   const paginados = filtrados.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+  const maxCompra = Math.max(1, ...ranking.map((r) => Number(r.total_compra) || 0));
 
   useEffect(() => {
     setPagina((p) => Math.min(p, Math.max(1, Math.ceil(filtrados.length / POR_PAGINA))));
@@ -272,8 +294,70 @@ export default function AnalisisCliente({ avisar }) {
   }
 
   return (
-    <div className="card">
-      <h2>👤 Historial por cliente</h2>
+    <>
+      <div className="card">
+        <h2>🏆 Ranking de clientes</h2>
+        {cargandoRanking ? (
+          <p className="empty">Cargando ranking...</p>
+        ) : ranking.length === 0 ? (
+          <p className="empty">Aún no hay ventas registradas para armar el ranking.</p>
+        ) : (
+          <>
+            <div
+              className="top-cliente"
+              onClick={() => verHistorial({ nombre: ranking[0].nombre, celular: ranking[0].celular })}
+              title="Ver historial del cliente"
+            >
+              <span className="top-corona">🏆</span>
+              <div className="top-datos">
+                <span className="top-etiqueta">El cliente que más compra</span>
+                <strong>{ranking[0].nombre || 'Cliente sin nombre'}</strong>
+                <small>{ranking[0].celular || '—'} · {ranking[0].compras} compra(s)</small>
+              </div>
+              <div className="top-monto">Bs. {dinero(ranking[0].total_compra)}</div>
+            </div>
+
+            <div className="resumen-analisis">
+              <div className="resumen-item"><span>Clientes con compras</span><strong>{resumenRanking.clientes}</strong></div>
+              <div className="resumen-item"><span>Compras</span><strong>{resumenRanking.compras}</strong></div>
+              <div className="resumen-item"><span>Total vendido</span><strong>Bs. {dinero(resumenRanking.total_compra)}</strong></div>
+            </div>
+
+            <div className="ranking-lista">
+              {ranking.slice(0, 15).map((r, i) => {
+                const ancho = maxCompra > 0 ? (Number(r.total_compra) / maxCompra) * 100 : 0;
+                return (
+                  <div
+                    key={r.clave}
+                    className={'ranking-fila' + (i === 0 ? ' top' : '')}
+                    onClick={() => verHistorial({ nombre: r.nombre, celular: r.celular })}
+                    title="Ver historial del cliente"
+                  >
+                    <div className="ranking-pos">{i + 1}</div>
+                    <div className="ranking-nombre">
+                      {r.nombre || 'Cliente'}
+                      <small>{r.celular || '—'}</small>
+                    </div>
+                    <div className="ranking-track">
+                      <div className="ranking-bar" style={{ width: ancho + '%' }} />
+                    </div>
+                    <div className="ranking-monto">
+                      Bs. {dinero(r.total_compra)}
+                      <small>{r.compras} compra(s)</small>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {ranking.length > 15 && (
+              <p className="hint">Mostrando el top 15 de {ranking.length} clientes.</p>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>👤 Historial por cliente</h2>
       <p className="hint">Busca por nombre o celular y selecciona un cliente para ver sus compras, deudas y pagos.</p>
 
       <form className="grid2" onSubmit={(e) => e.preventDefault()}>
@@ -320,7 +404,8 @@ export default function AnalisisCliente({ avisar }) {
           </table>
         </div>
       )}
-      <Paginacion total={filtrados.length} pagina={pagina} setPagina={setPagina} porPagina={POR_PAGINA} />
-    </div>
+        <Paginacion total={filtrados.length} pagina={pagina} setPagina={setPagina} porPagina={POR_PAGINA} />
+      </div>
+    </>
   );
 }

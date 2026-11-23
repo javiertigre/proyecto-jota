@@ -402,6 +402,50 @@ async function route(method, rawPath, body) {
     }
     return { ok: true, producto: { ...ins, foto_url: fotoUrl(foto_ruta) } };
   }
+  if (method === 'POST' && path === '/api/productos/lote') {
+    // body es FormData: fardo_id, precio, cantidad, foto
+    // Registra el MISMO producto varias veces con correlativos consecutivos.
+    const fardo_id = body.get('fardo_id');
+    const precio = body.get('precio');
+    const cantidad = parseInt(body.get('cantidad'), 10);
+    const foto = body.get('foto');
+    if (!fardo_id || !precio) throw new Error('Elige el fardo y pon el precio.');
+    if (!foto || !foto.size) throw new Error('Debes tomar la foto del producto.');
+    if (!Number.isFinite(cantidad) || cantidad < 2) throw new Error('La cantidad debe ser de 2 o más.');
+    if (cantidad > 100) throw new Error('Puedes registrar como máximo 100 productos de una vez.');
+    const { data: fardo, error: fErr } = await supabase
+      .from('fardos').select('id, codigo_fardo').eq('id', fardo_id).single();
+    if (fErr || !fardo) throw new Error('Fardo no encontrado.');
+
+    const inicio = await siguienteCorrelativo(fardo_id);
+    // Comprimir una sola vez y reutilizar la misma imagen en cada copia
+    const imagen = await comprimirFoto(foto);
+    const rutas = [];
+    const ids = [];
+    try {
+      for (let i = 0; i < cantidad; i++) {
+        const correlativo = inicio + i;
+        const nombre_foto = String(correlativo).padStart(3, '0') + '-' + fardo.codigo_fardo;
+        const foto_ruta = fardo.codigo_fardo + '/' + nombre_foto + '.jpg';
+        const { error: upErr } = await supabase.storage
+          .from('fotos').upload(foto_ruta, imagen, { contentType: 'image/jpeg', upsert: false });
+        if (upErr) throw new Error('No se pudo subir la foto: ' + upErr.message);
+        rutas.push(foto_ruta);
+        const { data: ins, error: insErr } = await supabase.from('productos_fardo').insert({
+          fardo_id: fardo.id, correlativo, nombre_foto,
+          precio: Number(precio), foto_ruta
+        }).select().single();
+        if (insErr || !ins) throw new Error('No se pudo registrar: ' + (insErr ? insErr.message : 'sin permiso (revisa RLS).'));
+        ids.push(ins.id);
+      }
+    } catch (e) {
+      // Deshacer lo creado para no dejar productos incompletos
+      if (ids.length) await supabase.from('productos_fardo').delete().in('id', ids);
+      if (rutas.length) await supabase.storage.from('fotos').remove(rutas);
+      throw e;
+    }
+    return { ok: true, cantidad, desde: inicio, hasta: inicio + cantidad - 1 };
+  }
   if ((m = path.match(/^\/api\/productos\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
     const id = m[1];
     if (method === 'DELETE') {
@@ -446,6 +490,109 @@ async function route(method, rawPath, body) {
       throw new Error(error ? error.message : 'Sin permiso en la base de datos (revisa RLS).');
     }
     return { ok: true, producto: { ...data, foto_url: fotoUrl(data.foto_ruta) } };
+  }
+
+  // ----- Análisis: resumen de productos vendidos/faltantes por fardo -----
+  if (method === 'GET' && path === '/api/analisis/fardos') {
+    const desde = (q.get('desde') || '').trim().slice(0, 10);
+    const hasta = (q.get('hasta') || '').trim().slice(0, 10);
+    const productos = await traerTodas(() =>
+      supabase.from('productos_fardo').select('id, fardo_id, precio').order('id')
+    );
+    let ventas = [];
+    try {
+      ventas = await traerTodas(() =>
+        supabase.from('ventas').select('producto_id, fecha_venta').order('id')
+      );
+    } catch {
+      ventas = [];
+    }
+    // El rango de fechas filtra las ventas (fecha_venta); el inventario total no cambia.
+    const ventasRango = (desde || hasta)
+      ? (ventas || []).filter((v) => {
+          const f = String(v.fecha_venta || '').slice(0, 10);
+          if (!f) return false;
+          if (desde && f < desde) return false;
+          if (hasta && f > hasta) return false;
+          return true;
+        })
+      : (ventas || []);
+    const vendidosSet = new Set(ventasRango.map((v) => String(v.producto_id)));
+    const mapa = {};
+    productos.forEach((p) => {
+      const k = String(p.fardo_id);
+      const m = mapa[k] || (mapa[k] = { fardo_id: p.fardo_id, total: 0, vendidos: 0, faltantes: 0, valor_total: 0, valor_vendido: 0 });
+      const precio = Number(p.precio) || 0;
+      m.total += 1;
+      m.valor_total += precio;
+      if (vendidosSet.has(String(p.id))) {
+        m.vendidos += 1;
+        m.valor_vendido += precio;
+      }
+    });
+    const lista = Object.values(mapa).map((m) => ({
+      ...m,
+      faltantes: m.total - m.vendidos,
+      valor_total: redondear2(m.valor_total),
+      valor_vendido: redondear2(m.valor_vendido)
+    }));
+    const resumen = lista.reduce((s, m) => ({
+      total: s.total + m.total,
+      vendidos: s.vendidos + m.vendidos,
+      faltantes: s.faltantes + m.faltantes,
+      valor_total: redondear2(s.valor_total + m.valor_total),
+      valor_vendido: redondear2(s.valor_vendido + m.valor_vendido)
+    }), { total: 0, vendidos: 0, faltantes: 0, valor_total: 0, valor_vendido: 0 });
+    return { fardos: lista, resumen };
+  }
+
+  // ----- Análisis: ranking de clientes que más compran -----
+  if (method === 'GET' && path === '/api/analisis/clientes') {
+    let ventas = [];
+    try {
+      ventas = await traerTodas(() =>
+        supabase.from('ventas')
+          .select('id, producto_id, precio_venta, deposito_cliente, fecha_venta, nombre_cliente, celular_cliente')
+          .order('id')
+      );
+    } catch {
+      ventas = [];
+    }
+    const claveCelular = (v) => {
+      const d = String(v || '').replace(/\D/g, '');
+      return d.length > 8 ? d.slice(-8) : d;
+    };
+    const mapa = {};
+    (ventas || []).forEach((v) => {
+      const cel = claveCelular(v.celular_cliente);
+      const nom = String(v.nombre_cliente || '').trim();
+      const clave = cel ? 'c:' + cel : ('n:' + nom.toLowerCase());
+      if (clave === 'n:') return;
+      const m = mapa[clave] || (mapa[clave] = {
+        clave, nombre: nom, celular: v.celular_cliente || '',
+        compras: 0, total_compra: 0, total_deposito: 0, ultima_compra: ''
+      });
+      m.compras += 1;
+      m.total_compra += Number(v.precio_venta) || 0;
+      m.total_deposito += Number(v.deposito_cliente) || 0;
+      if (nom && !m.nombre) m.nombre = nom;
+      const f = String(v.fecha_venta || '').slice(0, 10);
+      if (f > m.ultima_compra) m.ultima_compra = f;
+    });
+    const ranking = Object.values(mapa)
+      .map((m) => ({
+        ...m,
+        total_compra: redondear2(m.total_compra),
+        total_deposito: redondear2(m.total_deposito)
+      }))
+      .sort((a, b) => b.total_compra - a.total_compra || b.compras - a.compras);
+    const resumen = ranking.reduce((s, m) => ({
+      clientes: s.clientes + 1,
+      compras: s.compras + m.compras,
+      total_compra: redondear2(s.total_compra + m.total_compra),
+      total_deposito: redondear2(s.total_deposito + m.total_deposito)
+    }), { clientes: 0, compras: 0, total_compra: 0, total_deposito: 0 });
+    return { ranking, resumen };
   }
 
   // ----- Clientes -----

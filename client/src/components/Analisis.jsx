@@ -18,6 +18,10 @@ export default function Analisis({ fardos, avisar }) {
   const [guardando, setGuardando] = useState(false);
   const [generandoExcel, setGenerandoExcel] = useState(false);
   const [pagina, setPagina] = useState(1);
+  const [dashboard, setDashboard] = useState({ fardos: [], resumen: { total: 0, vendidos: 0, faltantes: 0, valor_total: 0, valor_vendido: 0 } });
+  const [cargandoDash, setCargandoDash] = useState(true);
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
   const POR_PAGINA = 10;
 
   const q = busqueda.trim().toLowerCase();
@@ -26,6 +30,41 @@ export default function Analisis({ fardos, avisar }) {
     : fardos;
 
   const fardoSel = fardos.find((f) => String(f.id) === String(fardoId));
+
+  const resumen = dashboard.resumen;
+  const pctVendido = resumen.total ? Math.round((resumen.vendidos / resumen.total) * 100) : 0;
+  const hayRango = Boolean(desde || hasta);
+  const etiquetaVendidos = hayRango ? 'Vendidos en el rango' : 'Vendidos';
+  const etiquetaFaltan = hayRango ? 'Sin venta en el rango' : 'Faltan vender';
+  const fardosBarra = fardos
+    .map((f) => {
+      const m = dashboard.fardos.find((x) => String(x.fardo_id) === String(f.id))
+        || { total: 0, vendidos: 0, faltantes: 0, valor_total: 0, valor_vendido: 0 };
+      return { ...m, codigo_fardo: f.codigo_fardo, nombre_fardo: f.nombre_fardo };
+    })
+    .filter((b) => b.total > 0);
+  const maxTotalBarra = Math.max(1, ...fardosBarra.map((b) => b.total));
+
+  useEffect(() => {
+    let vivo = true;
+    setCargandoDash(true);
+    const params = new URLSearchParams();
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    const qs = params.toString();
+    api.get('/api/analisis/fardos' + (qs ? '?' + qs : ''))
+      .then((r) => {
+        if (vivo) {
+          setDashboard({
+            fardos: r.fardos || [],
+            resumen: r.resumen || { total: 0, vendidos: 0, faltantes: 0, valor_total: 0, valor_vendido: 0 }
+          });
+        }
+      })
+      .catch((err) => { if (vivo) avisar('error', err.message); })
+      .finally(() => { if (vivo) setCargandoDash(false); });
+    return () => { vivo = false; };
+  }, [desde, hasta]);
 
   const cargar = async (id) => {
     if (!id) { setItems([]); return; }
@@ -51,6 +90,15 @@ export default function Analisis({ fardos, avisar }) {
     setEditando(null);
     setPagina(1);
     cargar(id);
+  };
+
+  const abrirFardo = (id) => {
+    elegir(id);
+    // Llevar al usuario al detalle del fardo que acaba de tocar en el gráfico
+    setTimeout(() => {
+      const el = document.getElementById('detalle-fardo');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 250);
   };
 
   const cambiarBusqueda = (valor) => {
@@ -191,10 +239,96 @@ export default function Analisis({ fardos, avisar }) {
         )}
       </div>
 
+      {!modoCliente && (
+        <div className="card">
+          <h2>📊 Dashboard de fardos</h2>
+          <div className="dash-filtros">
+            <div className="dash-filtro">
+              <label>Desde</label>
+              <input type="date" value={desde} max={hasta || undefined} onChange={(e) => setDesde(e.target.value)} />
+            </div>
+            <div className="dash-filtro">
+              <label>Hasta</label>
+              <input type="date" value={hasta} min={desde || undefined} onChange={(e) => setHasta(e.target.value)} />
+            </div>
+            {hayRango && (
+              <button type="button" className="btn-limpiar-filtro" onClick={() => { setDesde(''); setHasta(''); }}>
+                Limpiar fechas
+              </button>
+            )}
+          </div>
+          {hayRango && (
+            <p className="hint">Mostrando ventas del rango seleccionado; el total de productos es el inventario completo.</p>
+          )}
+          {cargandoDash ? (
+            <p className="empty">Cargando estadísticas...</p>
+          ) : resumen.total === 0 ? (
+            <p className="empty">Aún no hay productos registrados para mostrar estadísticas.</p>
+          ) : (
+            <>
+              <div className="dash-top">
+                <div className="donut-wrap">
+                  <div
+                    className="donut"
+                    style={{ background: `conic-gradient(#22c55e 0% ${pctVendido}%, #fbbf24 ${pctVendido}% 100%)` }}
+                  >
+                    <div className="donut-centro">
+                      <strong>{pctVendido}%</strong>
+                      <span>vendido</span>
+                    </div>
+                  </div>
+                  <div className="leyenda">
+                    <span><i style={{ background: '#22c55e' }} /> {etiquetaVendidos}: <strong>{resumen.vendidos}</strong></span>
+                    <span><i style={{ background: '#fbbf24' }} /> {etiquetaFaltan}: <strong>{resumen.faltantes}</strong></span>
+                  </div>
+                </div>
+                <div className="kpis">
+                  <div className="kpi"><span>Total productos</span><strong>{resumen.total}</strong></div>
+                  <div className="kpi verde"><span>{etiquetaVendidos}</span><strong>{resumen.vendidos}</strong></div>
+                  <div className="kpi ambar"><span>{etiquetaFaltan}</span><strong>{resumen.faltantes}</strong></div>
+                  <div className="kpi"><span>Valor total</span><strong>Bs. {resumen.valor_total.toFixed(2)}</strong></div>
+                  <div className="kpi verde"><span>Valor vendido</span><strong>Bs. {resumen.valor_vendido.toFixed(2)}</strong></div>
+                </div>
+              </div>
+
+              <h3 className="dash-subtitulo">Productos por fardo</h3>
+              <div className="barras">
+                {fardosBarra.map((b) => {
+                  const pct = b.total ? (b.vendidos / b.total) * 100 : 0;
+                  const ancho = (b.total / maxTotalBarra) * 100;
+                  return (
+                    <div
+                      className={'bar-fila clickable' + (String(fardoId) === String(b.fardo_id) ? ' activo' : '')}
+                      key={b.fardo_id}
+                      onClick={() => abrirFardo(b.fardo_id)}
+                      title="Ver detalle del fardo"
+                    >
+                      <div className="bar-nombre" title={(b.codigo_fardo || '') + ' — ' + (b.nombre_fardo || '')}>
+                        {b.codigo_fardo}
+                        <small>{b.nombre_fardo}</small>
+                      </div>
+                      <div className="bar-track">
+                        <div className="bar-bloque" style={{ width: ancho + '%' }}>
+                          <div className="bar-vendido" style={{ width: pct + '%' }} title={'Vendidos: ' + b.vendidos} />
+                          <div className="bar-faltante" style={{ width: (100 - pct) + '%' }} title={'Faltan: ' + b.faltantes} />
+                        </div>
+                      </div>
+                      <div className="bar-nums">
+                        {b.vendidos} / {b.total} <span>· faltan {b.faltantes}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {modoCliente && <AnalisisCliente avisar={avisar} />}
 
       {!modoCliente && fardoId && (
-        <div className="card">
+        <div className="card" id="detalle-fardo">
           <h2>🧾 Productos del fardo: {fardoSel ? `${fardoSel.codigo_fardo} — ${fardoSel.nombre_fardo}` : ''}</h2>
           <div className="resumen-analisis">
             <div className="resumen-item"><span>Productos</span><strong>{ordenados.length}</strong></div>

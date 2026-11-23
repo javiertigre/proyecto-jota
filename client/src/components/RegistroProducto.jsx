@@ -8,6 +8,12 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
   const [precio, setPrecio] = useState('');
   const [foto, setFoto] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  const [siguiente, setSiguiente] = useState(null);
+  const [modalLote, setModalLote] = useState(false);
+  const [cantidadLote, setCantidadLote] = useState('2');
+  const [precioLote, setPrecioLote] = useState('');
+  const [fotoLote, setFotoLote] = useState(null);
+  const [guardandoLote, setGuardandoLote] = useState(false);
   const [editando, setEditando] = useState(null);
   const [precioEdit, setPrecioEdit] = useState('');
   const [fotoEdit, setFotoEdit] = useState(null);
@@ -17,13 +23,50 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
 
   const elegirFardo = async (id) => {
     setFardoSel(id);
+    setSiguiente(null);
     if (!id) { setHint(''); return; }
     setHint('Calculando nombre de foto...');
     try {
       const d = await api.get('/api/fardos/' + id + '/siguiente');
+      setSiguiente(d.siguiente);
       setHint('La foto se guardará como: ' + d.nombre_foto);
     } catch {
       setHint('');
+    }
+  };
+
+  const abrirLote = () => {
+    if (!fardoSel) { avisar('error', 'Elige el fardo primero.'); return; }
+    setCantidadLote('2');
+    setPrecioLote(precio || '');
+    setFotoLote(null);
+    setModalLote(true);
+  };
+
+  const guardarLote = async (e) => {
+    e.preventDefault();
+    const cant = parseInt(cantidadLote, 10);
+    if (!fardoSel || !precioLote || !fotoLote) { avisar('error', 'Completa la cantidad, el precio y la foto.'); return; }
+    if (!Number.isFinite(cant) || cant < 2) { avisar('error', 'La cantidad debe ser de 2 o más.'); return; }
+    setGuardandoLote(true);
+    try {
+      const fd = new FormData();
+      fd.append('fardo_id', fardoSel);
+      fd.append('precio', precioLote);
+      fd.append('cantidad', cant);
+      fd.append('foto', fotoLote);
+      const r = await api.postForm('/api/productos/lote', fd);
+      const cod = (n) => String(n).padStart(3, '0') + '-' + (fardoActual ? fardoActual.codigo_fardo : '');
+      avisar('exito', r.cantidad + ' productos registrados (' + cod(r.desde) + ' al ' + cod(r.hasta) + ').');
+      setModalLote(false);
+      setFotoLote(null);
+      setCantidadLote('2');
+      elegirFardo(fardoSel);
+      recargar();
+    } catch (err) {
+      avisar('error', err.message);
+    } finally {
+      setGuardandoLote(false);
     }
   };
 
@@ -95,6 +138,11 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
   useEffect(() => { setPagina(1); }, [fardoSel, busqueda, productos]);
 
   const fardoActual = fardos.find((f) => String(f.id) === String(fardoSel));
+  const cantLote = parseInt(cantidadLote, 10) || 0;
+  const codFardoActual = fardoActual ? fardoActual.codigo_fardo : '';
+  const rangoLote = siguiente && cantLote >= 2
+    ? String(siguiente).padStart(3, '0') + '-' + codFardoActual + ' al ' + String(siguiente + cantLote - 1).padStart(3, '0') + '-' + codFardoActual
+    : '';
 
   const exportarExcel = async () => {
     setGenerandoExcel(true);
@@ -264,8 +312,9 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
             <label>💲 Poner precio</label>
             <input type="number" placeholder="Ej: 25.50" min="0" step="0.01" value={precio} onChange={(e) => setPrecio(e.target.value)} required />
           </div>
-          <div>
+          <div className="actions">
             <button className="btn-primary" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button type="button" className="btn-mismo" onClick={abrirLote}>🔁 Mismo producto (varios)</button>
           </div>
         </form>
       </div>
@@ -335,6 +384,41 @@ export default function RegistroProducto({ fardos, productos, fardoSel, setFardo
               <button type="button" onClick={() => setEditando(null)}>Cancelar</button>
             </div>
           </form>
+        </div>
+      )}
+
+      {modalLote && (
+        <div className="modal-fondo" onClick={() => { if (!guardandoLote) setModalLote(false); }}>
+          <div className="modal-entrega" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-entrega-cabecera">
+              <div>
+                <h2>🔁 Registrar mismo producto varias veces</h2>
+                <p className="sub">{fardoActual ? fardoActual.codigo_fardo + ' — ' + fardoActual.nombre_fardo : ''}</p>
+              </div>
+              <button type="button" className="modal-entrega-cerrar" onClick={() => setModalLote(false)} disabled={guardandoLote}>✕</button>
+            </div>
+            <div className="modal-entrega-cuerpo">
+              <form className="grid1" onSubmit={guardarLote}>
+                <div>
+                  <label>🔢 Cantidad del mismo producto</label>
+                  <input type="number" min="2" max="100" step="1" value={cantidadLote} onChange={(e) => setCantidadLote(e.target.value)} required />
+                </div>
+                <div>
+                  <label>💲 Precio por unidad</label>
+                  <input type="number" placeholder="Ej: 25.50" min="0" step="0.01" value={precioLote} onChange={(e) => setPrecioLote(e.target.value)} required />
+                </div>
+                <div>
+                  <label>📸 Foto del producto (se usará en todos)</label>
+                  <input type="file" accept="image/*" capture="environment" onChange={(e) => setFotoLote(e.target.files[0])} required />
+                </div>
+                {rangoLote && <p className="hint">Se crearán los códigos: <strong>{rangoLote}</strong></p>}
+                <div className="actions">
+                  <button className="btn-primary" disabled={guardandoLote}>{guardandoLote ? 'Guardando...' : 'Registrar ' + (cantLote || '') + ' productos'}</button>
+                  <button type="button" onClick={() => setModalLote(false)} disabled={guardandoLote}>Cancelar</button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
     </>
