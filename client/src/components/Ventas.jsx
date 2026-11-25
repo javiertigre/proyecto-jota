@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Paginacion from './Paginacion.jsx';
+import { dividirNombreCompleto } from '../nombreCliente.js';
 const ESTADOS = { P: 'Pendiente de Entrega', D: 'Deuda', E: 'Entregado', S: 'Sin Vender' };
 
 const hoyISO = () => {
@@ -145,6 +146,36 @@ export default function Ventas({ fardos, avisar }) {
     }
   };
 
+  // Al vender, si el celular no está en Clientes, se registra automáticamente con
+  // Nombre, Apellido Paterno y Apellido Materno separados para que el listado se vea bien.
+  const registrarClienteDesdeVenta = async (datos) => {
+    const cel = soloDigitos(datos.celular_cliente);
+    const nombreCompleto = String(datos.nombre_cliente || '').trim();
+    if (!cel || !nombreCompleto) return;
+    if (clientes.some((c) => soloDigitos(c.celular) === cel)) return;
+
+    try {
+      const { nombre, apellido_paterno, apellido_materno } = dividirNombreCompleto(nombreCompleto);
+      await api.post('/api/clientes', {
+        nombre,
+        apellido_paterno,
+        apellido_materno,
+        ciudad: datos.ciudad || '',
+        celular: String(datos.celular_cliente || '').trim()
+      });
+      const r = await api.get('/api/clientes').catch(() => null);
+      if (r && r.clientes) setClientes(r.clientes);
+    } catch (err) {
+      // Si el cliente ya estaba registrado en otro dispositivo, no se interrumpe la venta.
+      if (/ya se encuentra registrado/i.test(err.message || '')) {
+        const r = await api.get('/api/clientes').catch(() => null);
+        if (r && r.clientes) setClientes(r.clientes);
+      } else {
+        console.warn('Registro automático en clientes:', err.message);
+      }
+    }
+  };
+
   const guardar = async (e) => {
     e.preventDefault();
     try {
@@ -166,6 +197,7 @@ export default function Ventas({ fardos, avisar }) {
         return;
       }
       await api.post('/api/ventas', { producto_id: editando.id, ...form });
+      await registrarClienteDesdeVenta(form);
       avisar('exito', 'Venta guardada.');
       setEditando(null);
       cargar(fardoId);

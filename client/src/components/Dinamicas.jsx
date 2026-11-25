@@ -4,6 +4,7 @@ import { generarExcel } from '../excel.js';
 import Paginacion from './Paginacion.jsx';
 import ValoresDinamica from './ValoresDinamica.jsx';
 import CirculoColores from './CirculoColores.jsx';
+import { dividirNombreCompleto } from '../nombreCliente.js';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 const vacio = {
@@ -20,6 +21,7 @@ const vacio = {
 };
 
 const STORAGE_KEY_ENTREGADOS = 'dinamicas_tickets_entregados';
+const STORAGE_KEY_TICKETS_ENVIADOS = 'dinamicas_tickets_enviados_whatsapp';
 
 // Cada Bs 40 de compra genera 1 número de ticket
 const MONTO_POR_TICKET = 40;
@@ -89,6 +91,13 @@ const extraerNumerosDeRegistro = (rec) => {
   }
   return [...new Set(nums)].sort((a, b) => a - b);
 };
+
+const construirMensajeTickets = (tickets) =>
+  'Buena Noche Caserit@, El presente mensaje es para agradecerle por sus compras que realizo en nuestra tienda virtual Capricornio. ' +
+  'Conforme la dinamica en la que estamos BLACK FRIDAY, por cada 40Bs. de sus compritas, se le asigno los siguiente numero: ' +
+  (tickets || []).join(', ') +
+  '. Estos numeros son para el sorteo del dia VIERNES 27 de Noviembre a partir de las 20:30, recuerde el unico requisito es estar presente en el LIVE. ' +
+  'Tenga un reparador sueño.';
 
 const formatearListaTickets = (numeros) => {
   const nums = [...new Set((numeros || []).map(Number).filter((n) => !isNaN(n)))].sort((a, b) => a - b);
@@ -259,6 +268,14 @@ export default function Dinamicas({ avisar }) {
   const [nuevoClienteCelular, setNuevoClienteCelular] = useState('');
   const [nuevoClienteNombre, setNuevoClienteNombre] = useState('');
   const [guardandoCambioCliente, setGuardandoCambioCliente] = useState(false);
+  const [verEnvioTickets, setVerEnvioTickets] = useState(false);
+  const [enviadosTickets, setEnviadosTickets] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY_TICKETS_ENVIADOS) || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
   const POR_PAGINA = 10;
 
   const abrirModalCambioCliente = (ticketNumero = null, registroDirecto = null) => {
@@ -373,7 +390,7 @@ export default function Dinamicas({ avisar }) {
       const existeEnClientes = clientes.some((c) => soloDigitos(c.celular) === celLimpio);
       if (!existeEnClientes && celLimpio) {
         try {
-          const { nombre, apellido_paterno, apellido_materno } = parsearNombreParaCliente(nuevoNom);
+          const { nombre, apellido_paterno, apellido_materno } = dividirNombreCompleto(nuevoNom);
           await api.post('/api/clientes', {
             nombre,
             apellido_paterno,
@@ -507,27 +524,6 @@ export default function Dinamicas({ avisar }) {
     };
   }, []);
   useEffect(() => { setPagina(1); }, [lista, busquedaTicket, busquedaCelular, modoBusqueda]);
-
-  const parsearNombreParaCliente = (nombreCompleto) => {
-    const limpio = String(nombreCompleto || '').trim();
-    const partes = limpio.split(/\s+/).filter(Boolean);
-    if (partes.length === 0) {
-      return { nombre: 'Cliente', apellido_paterno: '—', apellido_materno: null };
-    }
-    if (partes.length === 1) {
-      return { nombre: partes[0], apellido_paterno: '—', apellido_materno: null };
-    }
-    if (partes.length === 2) {
-      return { nombre: partes[0], apellido_paterno: partes[1], apellido_materno: null };
-    }
-    if (partes.length === 3) {
-      return { nombre: partes[0] + ' ' + partes[1], apellido_paterno: partes[2], apellido_materno: null };
-    }
-    const apellido_materno = partes[partes.length - 1];
-    const apellido_paterno = partes[partes.length - 2];
-    const nombre = partes.slice(0, partes.length - 2).join(' ');
-    return { nombre, apellido_paterno, apellido_materno };
-  };
 
   const cambiar = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -729,7 +725,7 @@ export default function Dinamicas({ avisar }) {
       let nuevoClienteRegistrado = false;
       if (!existeEnClientes) {
         try {
-          const { nombre, apellido_paterno, apellido_materno } = parsearNombreParaCliente(nom);
+          const { nombre, apellido_paterno, apellido_materno } = dividirNombreCompleto(nom);
           const rCli = await api.post('/api/clientes', {
             nombre,
             apellido_paterno,
@@ -838,30 +834,33 @@ export default function Dinamicas({ avisar }) {
     }
   };
 
-  const enviarNumerosWhatsApp = (x) => {
-    const cel = soloDigitos(x.celular_cliente);
+  const enviarNumerosClienteTickets = (grupo) => {
+    const cel = soloDigitos(grupo.celular);
     if (!cel) {
       avisar('error', 'El cliente no tiene un número de celular registrado.');
       return;
     }
 
-    const tickets = desglosarTickets([x]).map((t) => '#' + t.numeroTexto);
+    const tickets = grupo.tickets.map((t) => '#' + t.numeroTexto);
     if (tickets.length === 0) {
-      avisar('error', 'Este registro no tiene números de ticket asignados.');
+      avisar('error', 'Este cliente no tiene números de ticket asignados.');
       return;
     }
 
-    const mensaje =
-      'Buena Noche Caserit@, El presente mensaje es para agradecerle por sus compras que realizo en nuestra tienda virtual Capricornio. ' +
-      'Conforme la dinamica en la que estamos BLACK FRIDAY, por cada 40Bs. de sus compritas, se le asigno los siguiente numero: ' +
-      tickets.join(', ') +
-      '. Estos numeros son para el sorteo del dia VIERNES 27 de Noviembre a partir de las 20:30, recuerde el unico requisito es estar presente en el LIVE. ' +
-      'Tenga un reparador sueño.';
-
-    // Si el número no incluye código de país, se asume Bolivia (591)
+    const mensaje = construirMensajeTickets(tickets);
     const telefono = cel.length === 8 ? '591' + cel : cel;
 
     window.open('https://wa.me/' + telefono + '?text=' + encodeURIComponent(mensaje), '_blank');
+
+    // Pintar la fila de verde para marcar que ya se envió el mensaje
+    setEnviadosTickets((prev) => {
+      const next = new Set(prev);
+      next.add(grupo.clave);
+      try {
+        localStorage.setItem(STORAGE_KEY_TICKETS_ENVIADOS, JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
   };
 
   const normalizarTelefono = (tel) => String(tel || '').replace(/[^0-9]/g, '');
@@ -887,6 +886,42 @@ export default function Dinamicas({ avisar }) {
     : (tieneFiltroCelular ? coincidenciasCelular : lista);
 
   const paginados = visibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+
+  // Clientes que tienen tickets, agrupados por celular para mostrar TODOS sus tickets en una sola fila
+  const clientesConTickets = (() => {
+    const mapa = {};
+    lista.forEach((x) => {
+      const tickets = desglosarTickets([x]);
+      if (tickets.length === 0) return;
+
+      const celular = String(x.celular_cliente || '').trim();
+      const nombre = String(x.nombre_completo || '').trim();
+      const tel = normalizarTelefono(celular);
+      const clave = tel || (nombre.toLowerCase() + '|' + celular.toLowerCase());
+
+      if (!mapa[clave]) {
+        mapa[clave] = { clave, nombre, celular, tickets: [], ticketsVistos: new Set() };
+      }
+      if (!mapa[clave].nombre && nombre) mapa[clave].nombre = nombre;
+      if (!mapa[clave].celular && celular) mapa[clave].celular = celular;
+
+      tickets.forEach((t) => {
+        const numeroClave = String(t.numero || t.numeroTexto);
+        if (mapa[clave].ticketsVistos.has(numeroClave)) return;
+        mapa[clave].ticketsVistos.add(numeroClave);
+        mapa[clave].tickets.push(t);
+      });
+    });
+
+    return Object.values(mapa)
+      .map((g) => ({
+        clave: g.clave,
+        nombre: g.nombre,
+        celular: g.celular,
+        tickets: g.tickets.sort((a, b) => a.numero - b.numero)
+      }))
+      .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  })();
 
   const comprasPorFecha = (() => {
     if (modoBusqueda !== 'celular' || !busquedaCelular.trim() || coincidenciasCelular.length === 0) {
@@ -1733,6 +1768,22 @@ export default function Dinamicas({ avisar }) {
               >
                 📱 Buscar por Celular (Historial por fechas)
               </button>
+              <button
+                type="button"
+                onClick={() => setVerEnvioTickets((v) => !v)}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: 6,
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  background: verEnvioTickets ? '#16a34a' : '#e2e8f0',
+                  color: verEnvioTickets ? '#ffffff' : '#475569'
+                }}
+              >
+                📤 Enviar Tickets
+              </button>
             </div>
 
             {modoBusqueda === 'ticket' ? (
@@ -2106,6 +2157,135 @@ export default function Dinamicas({ avisar }) {
             )}
           </div>
 
+          {/* LISTADO DE CLIENTES CON TICKETS PARA ENVIAR SUS NÚMEROS */}
+          {verEnvioTickets && (
+            <div style={{
+              background: '#f0fdf4',
+              border: '2px solid #86efac',
+              borderRadius: 8,
+              padding: '14px 16px',
+              margin: '0 0 18px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 900, color: '#065f46', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📤 Enviar Tickets a Clientes
+                  </div>
+                  <small style={{ color: '#166534', display: 'block', marginTop: 2 }}>
+                    Clientes con tickets registrados. Si un cliente tiene tickets en varias fechas, se muestran todos juntos en una sola fila.
+                  </small>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, background: '#dcfce7', color: '#166534', padding: '4px 10px', borderRadius: 12, fontWeight: 700 }}>
+                    {clientesConTickets.length} cliente{clientesConTickets.length === 1 ? '' : 's'} con tickets
+                  </span>
+                  <button type="button" onClick={() => setVerEnvioTickets(false)} style={{ padding: '5px 12px', fontSize: 13 }}>
+                    ✕ Cerrar
+                  </button>
+                </div>
+              </div>
+
+              {clientesConTickets.length === 0 ? (
+                <p className="empty" style={{ margin: 0 }}>No hay clientes con tickets registrados.</p>
+              ) : (
+                <div className="tabla">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nombre Cliente</th>
+                        <th>Celular</th>
+                        <th>N° Ticket</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientesConTickets.map((g) => {
+                        const enviado = enviadosTickets.has(g.clave);
+                        const ticketsPorFecha = g.tickets.reduce((acc, t) => {
+                          const f = t.fecha || 'Sin fecha';
+                          if (!acc[f]) acc[f] = [];
+                          acc[f].push(t);
+                          return acc;
+                        }, {});
+
+                        return (
+                          <tr
+                            key={g.clave}
+                            style={{
+                              background: enviado ? '#bbf7d0' : '#ffffff',
+                              transition: 'background 0.25s ease'
+                            }}
+                          >
+                            <td data-label="Nombre Cliente">
+                              <strong style={{ color: '#0f172a' }}>{g.nombre || '—'}</strong>
+                              {enviado && (
+                                <span style={{ display: 'block', fontSize: 11, color: '#166534', fontWeight: 700, marginTop: 2 }}>
+                                  ✅ Mensaje enviado
+                                </span>
+                              )}
+                            </td>
+                            <td data-label="Celular">
+                              <span style={{ color: '#1d4ed8', fontWeight: 700 }}>{g.celular || '—'}</span>
+                            </td>
+                            <td data-label="N° Ticket">
+                              <div style={{ display: 'grid', gap: 4 }}>
+                                {Object.entries(ticketsPorFecha)
+                                  .sort((a, b) => b[0].localeCompare(a[0]))
+                                  .map(([fecha, tks]) => (
+                                    <div key={fecha} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: 11, color: '#475569', fontWeight: 700, minWidth: 74 }}>
+                                        📅 {fecha}
+                                      </span>
+                                      {tks.map((t) => (
+                                        <span
+                                          key={`${g.clave}-${fecha}-${t.numero}-${t.numeroTexto}`}
+                                          style={{
+                                            background: enviado ? '#dcfce7' : '#eff6ff',
+                                            color: enviado ? '#166534' : '#1e40af',
+                                            fontWeight: 800,
+                                            fontSize: 12,
+                                            padding: '2px 7px',
+                                            borderRadius: 4,
+                                            border: `1px solid ${enviado ? '#86efac' : '#bfdbfe'}`
+                                          }}
+                                        >
+                                          #{t.numeroTexto}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ))}
+                              </div>
+                            </td>
+                            <td data-label="Acciones" className="actions">
+                              <button
+                                type="button"
+                                onClick={() => enviarNumerosClienteTickets(g)}
+                                title="Enviar por WhatsApp todos los números de ticket de este cliente"
+                                style={{
+                                  padding: '6px 12px',
+                                  fontSize: 12,
+                                  background: enviado ? '#15803d' : '#22c55e',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {enviado ? '✅ Reenviar Numeros' : '📲 Enviar Numeros'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {visibles.length === 0 ? (
             <p className="empty">
               {tieneFiltroTicket || tieneFiltroCelular
@@ -2171,23 +2351,6 @@ export default function Dinamicas({ avisar }) {
                           title="Cambiar de cliente para los tickets de este registro"
                         >
                           🔄 Cambiar Cliente
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => enviarNumerosWhatsApp(x)}
-                          title="Enviar por WhatsApp los números de ticket asignados a este cliente"
-                          style={{
-                            padding: '6px 10px',
-                            fontSize: 12,
-                            background: '#22c55e',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: 6,
-                            fontWeight: 700,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          📲 Enviar Numeros
                         </button>
                         <button className="btn-edit" onClick={() => editar(x)}>Editar</button>
                         <button className="btn-del" onClick={() => eliminar(x)}>Eliminar</button>

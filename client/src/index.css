@@ -675,6 +675,7 @@ tfoot td { background: #fef9c3; font-weight: 800; }
 .kpi.verde strong { color: #15803d; }
 .kpi.ambar { background: #fffbeb; border-color: #fde68a; }
 .kpi.ambar strong { color: #b45309; }
+.fardo-dash { margin: 6px 0 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
 .dash-subtitulo { margin: 6px 0 12px; font-size: 15px; color: #0f172a; }
 .dash-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 2px 0 10px; }
 .dash-filtro { display: flex; flex-direction: column; gap: 4px; }

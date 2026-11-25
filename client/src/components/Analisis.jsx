@@ -149,6 +149,22 @@ export default function Analisis({ fardos, avisar }) {
   const totalRemate = ordenados.reduce((s, p) => s + (Number(p.precio_remate) || 0), 0);
   const totalFardo = Number(fardoSel?.valor_total_fardo) || ordenados.reduce((s, p) => s + (Number(p.precio) || 0), 0);
   const totalPrecios = ordenados.reduce((s, p) => s + (Number(p.precio) || 0), 0);
+  // Dashboard del fardo seleccionado
+  const pctVendFardo = ordenados.length ? Math.round((vendidos / ordenados.length) * 100) : 0;
+  const faltanFardo = Math.max(0, ordenados.length - vendidos);
+  const valorVendidoFardo = ordenados.reduce((s, p) => s + (p.venta ? (Number(p.venta.precio_venta) || 0) : 0), 0);
+  const porEstado = { P: 0, D: 0, E: 0 };
+  ordenados.forEach((p) => {
+    const est = p.venta ? p.venta.estado : null;
+    if (est === 'P' || est === 'D' || est === 'E') porEstado[est] += 1;
+  });
+  const estadoBarras = [
+    { clave: 'E', label: 'Entregados', valor: porEstado.E, color: '#22c55e' },
+    { clave: 'P', label: 'Pendientes', valor: porEstado.P, color: '#fbbf24' },
+    { clave: 'D', label: 'Deudas', valor: porEstado.D, color: '#ef4444' },
+    { clave: 'S', label: 'Sin vender', valor: faltanFardo, color: '#cbd5e1' }
+  ];
+  const maxEstado = Math.max(1, ...estadoBarras.map((e) => e.valor));
 
   const exportarExcel = async () => {
     if (!ordenados.length) return;
@@ -337,6 +353,57 @@ export default function Analisis({ fardos, avisar }) {
             <div className="resumen-item"><span>Total fardo</span><strong>Bs. {totalFardo.toFixed(2)}</strong></div>
             <div className="resumen-item"><span>Total remate</span><strong>Bs. {totalRemate.toFixed(2)}</strong></div>
           </div>
+
+          {!cargando && ordenados.length > 0 && (
+            <div className="fardo-dash">
+              <div className="dash-top">
+                <div className="donut-wrap">
+                  <div
+                    className="donut"
+                    style={{ background: `conic-gradient(#22c55e 0% ${pctVendFardo}%, #fbbf24 ${pctVendFardo}% 100%)` }}
+                  >
+                    <div className="donut-centro">
+                      <strong>{pctVendFardo}%</strong>
+                      <span>vendido</span>
+                    </div>
+                  </div>
+                  <div className="leyenda">
+                    <span><i style={{ background: '#22c55e' }} /> Vendidos: <strong>{vendidos}</strong></span>
+                    <span><i style={{ background: '#fbbf24' }} /> Faltan vender: <strong>{faltanFardo}</strong></span>
+                  </div>
+                </div>
+                <div className="kpis">
+                  <div className="kpi"><span>Total productos</span><strong>{ordenados.length}</strong></div>
+                  <div className="kpi verde"><span>Vendidos</span><strong>{vendidos}</strong></div>
+                  <div className="kpi ambar"><span>Faltan vender</span><strong>{faltanFardo}</strong></div>
+                  <div className="kpi"><span>Valor productos</span><strong>Bs. {totalPrecios.toFixed(2)}</strong></div>
+                  <div className="kpi verde"><span>Valor vendido</span><strong>Bs. {valorVendidoFardo.toFixed(2)}</strong></div>
+                </div>
+              </div>
+
+              <h3 className="dash-subtitulo">Ventas por estado</h3>
+              <div className="barras">
+                {estadoBarras.map((e) => (
+                  <div className="bar-fila" key={e.clave}>
+                    <div className="bar-nombre">{e.label}</div>
+                    <div className="bar-track">
+                      <div
+                        style={{
+                          width: (e.valor / maxEstado) * 100 + '%',
+                          background: e.color,
+                          height: '100%',
+                          borderRadius: 999,
+                          minWidth: e.valor > 0 ? 4 : 0
+                        }}
+                      />
+                    </div>
+                    <div className="bar-nums">{e.valor}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {ordenados.length > 0 && (
             <div className="actions" style={{ margin: '0 0 10px' }}>
               <button className="btn-entregar" onClick={exportarExcel} disabled={generandoExcel}>
