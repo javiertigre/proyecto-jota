@@ -15,6 +15,7 @@ import Analisis from './components/Analisis.jsx';
 import Dinamicas from './components/Dinamicas.jsx';
 import Destinos from './components/Destinos.jsx';
 import Cuadre from './components/Cuadre.jsx';
+import SplashBienvenida from './components/SplashBienvenida.jsx';
 
 // Pestaña inicial según tipo de usuario
 function tabInicial(rol) {
@@ -26,6 +27,7 @@ function tabInicial(rol) {
 export default function App() {
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [mostrarBienvenida, setMostrarBienvenida] = useState(true);
   const [tab, setTab] = useState('config');
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [navAbierto, setNavAbierto] = useState(false);
@@ -83,7 +85,12 @@ export default function App() {
   const salir = async () => {
     await api.post('/api/logout', {});
     setSesion(null);
+    setMostrarBienvenida(true);
   };
+
+  if (mostrarBienvenida) {
+    return <SplashBienvenida onDone={() => setMostrarBienvenida(false)} />;
+  }
 
   if (cargando) return <div className="app"><p>Cargando...</p></div>;
   if (!sesion) return <div className="app"><Login onAuth={(me) => { setSesion(me); setTab(tabInicial(obtenerRol(me.user, me.profile))); cargarDatos(); }} /></div>;

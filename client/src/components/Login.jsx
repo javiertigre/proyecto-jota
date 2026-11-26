@@ -31,9 +31,9 @@ export default function Login({ onAuth }) {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
-        <img src="/JC.jpeg" alt="JC Capricornio Detalles" />
-        <h1>{modo === 'login' ? 'Bienvenido' : 'Crear cuenta'}</h1>
-        <p className="sub">JC · Capricornio Detalles — ingresa para continuar</p>
+        <img src="/JC.jpeg" alt='JC - Tienda Virtual "Jota Capri"' />
+        <h1>{modo === 'login' ? 'Bienvenido al Sistema' : 'Crear cuenta'}</h1>
+        <p className="sub">de su tienda Virtual <strong>"Jota Capri"</strong></p>
         {error && <p className="error">{error}</p>}
         <form onSubmit={enviar}>
           {modo === 'register' && (
