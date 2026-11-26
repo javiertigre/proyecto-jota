@@ -776,3 +776,55 @@ tfoot td { background: #fef9c3; font-weight: 800; }
   .top-cliente { flex-wrap: wrap; }
   .top-monto { width: 100%; text-align: right; }
 }
+
+/* ===== Módulo de Cuadre ===== */
+.cuadre-upload {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px;
+  margin-top: 10px;
+}
+.cuadre-upload > div { flex: 1 1 260px; }
+.cuadre-upload .btn-submit-entrega { flex: 0 0 auto; margin: 0; }
+.cuadre-toolbar {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin-bottom: 12px; align-items: end;
+}
+.cuadre-limpiar { display: flex; align-items: flex-end; }
+.cuadre-limpiar .btn-cancelar { width: 100%; }
+.cuadre-totales {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px; margin: 8px 0 16px;
+}
+.cuadre-total {
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px;
+}
+.cuadre-total span { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+.cuadre-total strong { display: block; font-size: 18px; font-weight: 800; margin-top: 2px; }
+.cuadre-total.ingreso strong { color: var(--green-d); }
+.cuadre-total.gasto strong { color: #b91c1c; }
+.cuadre-hora { display: block; font-size: 12px; color: var(--muted); }
+.cuadre-transaccion { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.cuadre-monto { font-weight: 800; white-space: nowrap; }
+.cuadre-monto.ingreso { color: var(--green-d); }
+.cuadre-monto.gasto { color: #b91c1c; }
+.cuadre-input {
+  width: 100%; min-width: 130px; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 14px;
+}
+.btn-comprobar {
+  background: var(--red); color: #fff; padding: 10px 14px; border-radius: 10px;
+  font-size: 14px; font-weight: 800;
+}
+.btn-comprobar:hover { background: #dc2626; }
+.btn-comprobado {
+  background: var(--green); color: #fff; padding: 10px 14px; border-radius: 10px;
+  font-size: 14px; font-weight: 800;
+}
+.btn-comprobado:hover { background: var(--green-d); }
+.cuadre-accion { width: auto; }
+tr.fila-comprobada td { background: #ecfdf5 !important; }
+tr.fila-comprobada { background: #ecfdf5; }
+@media (max-width: 700px) {
+  .cuadre-toolbar { grid-template-columns: 1fr; }
+  .cuadre-upload .btn-submit-entrega { width: 100%; }
+}

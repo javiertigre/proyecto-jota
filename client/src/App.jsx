@@ -14,6 +14,7 @@ import ReporteVentas from './components/ReporteVentas.jsx';
 import Analisis from './components/Analisis.jsx';
 import Dinamicas from './components/Dinamicas.jsx';
 import Destinos from './components/Destinos.jsx';
+import Cuadre from './components/Cuadre.jsx';
 
 // Pestaña inicial según tipo de usuario
 function tabInicial(rol) {
@@ -28,7 +29,6 @@ export default function App() {
   const [tab, setTab] = useState('config');
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [navAbierto, setNavAbierto] = useState(false);
-  const [verCuadre, setVerCuadre] = useState(false);
   const [fardos, setFardos] = useState([]);
   const [productos, setProductos] = useState([]);
   const [fardoSel, setFardoSel] = useState('');
@@ -93,7 +93,7 @@ export default function App() {
   const esAdmin = rol === 'admin';
   const puede = (t) => esAdmin || (rol === 'registro' && t === 'registro') || (rol === 'entregas' && t === 'entregas');
 
-  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'destinos', 'ubicaciones', 'lugares_entrega', 'cuentas', 'dinamicas'].includes(tab);
+  const enConfig = ['config', 'fardos', 'clientes', 'buses', 'destinos', 'ubicaciones', 'lugares_entrega', 'cuentas', 'dinamicas', 'cuadre'].includes(tab);
   const irTab = (t) => {
     setTab(t);
     setMenuAbierto(false);
@@ -102,7 +102,7 @@ export default function App() {
   };
   const elegirConfig = (opcion) => {
     if (opcion === 'registro') irTab('fardos');
-    if (opcion === 'cuadre') { irTab('config'); setVerCuadre(true); }
+    if (opcion === 'cuadre') irTab('cuadre');
     if (opcion === 'clientes') irTab('clientes');
     if (opcion === 'buses') irTab('buses');
     if (opcion === 'destinos') irTab('destinos');
@@ -181,13 +181,11 @@ export default function App() {
             <button onClick={() => elegirConfig('cuentas')}>🔑 Administrar Cuentas</button>
             <button onClick={() => elegirConfig('dinamicas')}>🎯 Dinámicas</button>
           </div>
-          {verCuadre && (
-            <div style={{ marginTop: 15, padding: 15, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8 }}>
-              <strong>Módulo de Cuadre</strong>
-              <p style={{ color: '#6b7280' }}>Pendiente de implementar.</p>
-            </div>
-          )}
         </div>
+      )}
+
+      {esAdmin && tab === 'cuadre' && (
+        <Cuadre avisar={avisar} />
       )}
 
       {esAdmin && tab === 'fardos' && (

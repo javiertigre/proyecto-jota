@@ -760,6 +760,95 @@ async function route(method, rawPath, body) {
     return { ok: true, cliente: data[0] };
   }
 
+  // ----- Cuadre (extractos bancarios) -----
+  const AVISO_TABLA_CUADRE = 'Falta crear la tabla de Cuadre (cuadre_registros). Ejecuta auth-supabase/CUADRE.sql en el SQL Editor de Supabase y vuelve a intentar.';
+
+  if (method === 'GET' && path === '/api/cuadre') {
+    const archivo = (q.get('archivo') || '').trim();
+    const crearConsulta = () => {
+      let consulta = supabase.from('cuadre_registros').select('*');
+      if (archivo) consulta = consulta.eq('archivo', archivo);
+      return consulta
+        .order('fecha', { ascending: false })
+        .order('hora', { ascending: false })
+        .order('id', { ascending: false });
+    };
+    try {
+      const data = await traerTodas(crearConsulta);
+      return { registros: data || [] };
+    } catch (error) {
+      if (esFaltaTabla(error)) throw new Error(AVISO_TABLA_CUADRE);
+      throw new Error(error.message);
+    }
+  }
+
+  if (method === 'POST' && path === '/api/cuadre/guardar') {
+    const { archivo, registros } = body || {};
+    const nombreArchivo = String(archivo || '').trim() || 'Extracto';
+    const filas = (Array.isArray(registros) ? registros : [])
+      .filter((r) => r && r.fecha)
+      .map((r) => ({
+        fecha: String(r.fecha).slice(0, 10),
+        hora: r.hora ? String(r.hora).trim() : null,
+        descripcion: r.descripcion ? String(r.descripcion).trim() : null,
+        detalle: r.detalle ? String(r.detalle).trim() : null,
+        transaccion: r.transaccion ? String(r.transaccion).trim() : null,
+        ingreso: r.ingreso === null || r.ingreso === undefined || r.ingreso === '' ? null : Number(r.ingreso),
+        gasto: r.gasto === null || r.gasto === undefined || r.gasto === '' ? null : Number(r.gasto),
+        archivo: nombreArchivo
+      }));
+    if (!filas.length) throw new Error('El PDF no contiene movimientos reconocibles.');
+
+    // Insertar por lotes e ignorar los movimientos ya cargados (no pisa ediciones).
+    const TAM = 400;
+    for (let i = 0; i < filas.length; i += TAM) {
+      const lote = filas.slice(i, i + TAM);
+      const { error } = await supabase
+        .from('cuadre_registros')
+        .upsert(lote, { onConflict: 'fecha,hora,transaccion', ignoreDuplicates: true });
+      if (error) {
+        if (esFaltaTabla(error)) throw new Error(AVISO_TABLA_CUADRE);
+        throw new Error(error.message);
+      }
+    }
+    return { ok: true, archivo: nombreArchivo, guardados: filas.length };
+  }
+
+  if ((m = path.match(/^\/api\/cuadre\/([^/]+)\/comprobar$/)) && method === 'PUT') {
+    const { comprobado } = body || {};
+    const { data, error } = await supabase
+      .from('cuadre_registros')
+      .update({ comprobado: !!comprobado })
+      .eq('id', m[1])
+      .select();
+    if (error) {
+      if (esFaltaTabla(error)) throw new Error(AVISO_TABLA_CUADRE);
+      throw new Error(error.message);
+    }
+    if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+    return { ok: true, registro: data[0] };
+  }
+
+  if ((m = path.match(/^\/api\/cuadre\/([^/]+)$/)) && method === 'PUT') {
+    const { celular, nombre_cliente, cliente_id } = body || {};
+    const cambios = {
+      celular: celular ? String(celular).trim() : null,
+      nombre_cliente: nombre_cliente ? String(nombre_cliente).trim() : null,
+      cliente_id: cliente_id ? Number(cliente_id) : null
+    };
+    const { data, error } = await supabase
+      .from('cuadre_registros')
+      .update(cambios)
+      .eq('id', m[1])
+      .select();
+    if (error) {
+      if (esFaltaTabla(error)) throw new Error(AVISO_TABLA_CUADRE);
+      throw new Error(error.message);
+    }
+    if (!data || !data.length) throw new Error('Sin permiso en la base de datos (revisa RLS).');
+    return { ok: true, registro: data[0] };
+  }
+
   // ----- Dinámicas -----
   // Sincronización en la nube para estados de tickets de dinámicas
   // (Permite que el estado "Entregado" persista en la nube para cualquier celular, PC y usuario)
