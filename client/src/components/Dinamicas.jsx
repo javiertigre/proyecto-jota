@@ -48,13 +48,13 @@ const guardarEstadoEntregadoLocal = (id, estado) => {
     const mapa = obtenerEstadosEntregadosLocales();
     mapa[String(id)] = estado;
     localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa));
-  } catch {}
+  } catch { }
 };
 
 const guardarTodosEstadosEntregadosLocales = (mapa) => {
   try {
     localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa || {}));
-  } catch {}
+  } catch { }
 };
 
 const eliminarEstadoEntregadoLocal = (id) => {
@@ -63,7 +63,7 @@ const eliminarEstadoEntregadoLocal = (id) => {
     const mapa = obtenerEstadosEntregadosLocales();
     delete mapa[String(id)];
     localStorage.setItem(STORAGE_KEY_ENTREGADOS, JSON.stringify(mapa));
-  } catch {}
+  } catch { }
 };
 
 const extraerNumerosDeRegistro = (rec) => {
@@ -93,11 +93,11 @@ const extraerNumerosDeRegistro = (rec) => {
 };
 
 const construirMensajeTickets = (tickets) =>
-  'Buena Noche Caserit@, El presente mensaje es para agradecerle por sus compras que realizo en nuestra tienda virtual Capricornio. ' +
-  'Conforme la dinamica en la que estamos BLACK FRIDAY, por cada 40Bs. de sus compritas, se le asigno los siguiente numero: ' +
+  'Buena Noche Caserit@, El presente mensaje es para agradecerle por las compras que realizo en nuestra tienda virtual Capricornio. ' +
+  'Conforme la dinamica en la que estamos "BLACK FRIDAY", por cada 40Bs. de sus compritas, se le asigno los siguientes numeros: ' +
   (tickets || []).join(', ') +
   '. Estos numeros son para el sorteo del dia VIERNES 27 de Noviembre a partir de las 20:30, recuerde el unico requisito es estar presente en el LIVE. ' +
-  'Tenga un reparador sueño.';
+  'Esperamos su presencia!!!. Tenga un descanso reparador.';
 
 const formatearListaTickets = (numeros) => {
   const nums = [...new Set((numeros || []).map(Number).filter((n) => !isNaN(n)))].sort((a, b) => a - b);
@@ -208,7 +208,7 @@ const desglosarTickets = (items) => {
 
     // 2. Solo si n_ticket no está presente, usar numero_desde y numero_hasta
     const tieneRango = x.numero_desde !== null && x.numero_desde !== undefined && x.numero_desde !== '' &&
-                       x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
+      x.numero_hasta !== null && x.numero_hasta !== undefined && x.numero_hasta !== '';
     if (tieneRango) {
       const d = Number(x.numero_desde);
       const h = Number(x.numero_hasta);
@@ -495,7 +495,7 @@ export default function Dinamicas({ avisar }) {
         if (items.length === 1) {
           const unica = items[0];
           setDinamicaSel(unica.nombre);
-          try { localStorage.setItem('dinamica_activa', unica.nombre); } catch {}
+          try { localStorage.setItem('dinamica_activa', unica.nombre); } catch { }
           return { ...prev, dinamica_nombre: unica.nombre, valor_dinamica: unica.valor };
         }
 
@@ -597,7 +597,7 @@ export default function Dinamicas({ avisar }) {
       try {
         if (nombre) localStorage.setItem('dinamica_activa', nombre);
         else localStorage.removeItem('dinamica_activa');
-      } catch {}
+      } catch { }
     }
 
     setForm((prev) => ({
@@ -742,7 +742,7 @@ export default function Dinamicas({ avisar }) {
             try {
               const r = await api.get('/api/clientes');
               setClientes(r.clientes || []);
-            } catch {}
+            } catch { }
           } else {
             console.warn('Registro automático en clientes:', errCli.message);
           }
@@ -858,7 +858,7 @@ export default function Dinamicas({ avisar }) {
       next.add(grupo.clave);
       try {
         localStorage.setItem(STORAGE_KEY_TICKETS_ENVIADOS, JSON.stringify([...next]));
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -871,11 +871,11 @@ export default function Dinamicas({ avisar }) {
 
   const coincidenciasCelular = busquedaCelular.trim()
     ? lista.filter((x) => {
-        const celClean = normalizarTelefono(x.celular_cliente);
-        const qClean = normalizarTelefono(busquedaCelular);
-        if (qClean) return celClean.includes(qClean);
-        return String(x.celular_cliente || '').toLowerCase().includes(busquedaCelular.toLowerCase().trim());
-      })
+      const celClean = normalizarTelefono(x.celular_cliente);
+      const qClean = normalizarTelefono(busquedaCelular);
+      if (qClean) return celClean.includes(qClean);
+      return String(x.celular_cliente || '').toLowerCase().includes(busquedaCelular.toLowerCase().trim());
+    })
     : [];
 
   const tieneFiltroTicket = modoBusqueda === 'ticket' && busquedaTicket.trim();
@@ -1005,12 +1005,12 @@ export default function Dinamicas({ avisar }) {
     // Filtrar por rango de fechas de compra (las fechas se guardan como AAAA-MM-DD)
     const origen = (desde || hasta)
       ? origenBase.filter((x) => {
-          const f = String(x.fecha_compra || '').trim();
-          if (!f) return false;
-          if (desde && f < desde) return false;
-          if (hasta && f > hasta) return false;
-          return true;
-        })
+        const f = String(x.fecha_compra || '').trim();
+        if (!f) return false;
+        if (desde && f < desde) return false;
+        if (hasta && f > hasta) return false;
+        return true;
+      })
       : origenBase;
 
     // Solo números en estado Pendiente (los entregados no se muestran para imprimir)

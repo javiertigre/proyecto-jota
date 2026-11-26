@@ -802,11 +802,13 @@ tfoot td { background: #fef9c3; font-weight: 800; }
 .cuadre-total strong { display: block; font-size: 18px; font-weight: 800; margin-top: 2px; }
 .cuadre-total.ingreso strong { color: var(--green-d); }
 .cuadre-total.gasto strong { color: #b91c1c; }
-.cuadre-hora { display: block; font-size: 12px; color: var(--muted); }
-.cuadre-transaccion { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.cuadre-hora { display: block; font-size: 12px; color: var(--muted); }.cuadre-transaccion { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
 .cuadre-monto { font-weight: 800; white-space: nowrap; }
 .cuadre-monto.ingreso { color: var(--green-d); }
 .cuadre-monto.gasto { color: #b91c1c; }
+.cuadre-comprobados { margin: 4px 0 20px; }
+.cuadre-comprobados h3 { margin: 0 0 10px; font-size: 16px; color: var(--green-d); }
+.cuadre-comprobados tfoot td { font-weight: 800; background: #f0fdf4 !important; }
 .cuadre-input {
   width: 100%; min-width: 130px; padding: 8px 10px; border: 1px solid var(--line);
   border-radius: 8px; font-size: 14px;

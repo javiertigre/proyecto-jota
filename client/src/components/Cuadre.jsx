@@ -107,6 +107,34 @@ export default function Cuadre({ avisar }) {
     return { ingreso, gasto, saldo: ingreso - gasto, cantidad: filtrados.length };
   }, [filtrados]);
 
+  // Totales por fecha, únicamente de los movimientos marcados como Comprobado.
+  const totalesComprobados = useMemo(() => {
+    const mapa = new Map();
+    filtrados.forEach((r) => {
+      if (!r.comprobado) return;
+      const fecha = String(r.fecha || '').slice(0, 10);
+      if (!fecha) return;
+      if (!mapa.has(fecha)) mapa.set(fecha, { fecha, cantidad: 0, ingreso: 0, gasto: 0 });
+      const grupo = mapa.get(fecha);
+      grupo.cantidad += 1;
+      grupo.ingreso += Number(r.ingreso) || 0;
+      grupo.gasto += Number(r.gasto) || 0;
+    });
+    const filas = [...mapa.values()]
+      .map((g) => ({ ...g, saldo: g.ingreso - g.gasto }))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    const total = filas.reduce(
+      (t, g) => ({
+        cantidad: t.cantidad + g.cantidad,
+        ingreso: t.ingreso + g.ingreso,
+        gasto: t.gasto + g.gasto,
+        saldo: t.saldo + g.saldo
+      }),
+      { cantidad: 0, ingreso: 0, gasto: 0, saldo: 0 }
+    );
+    return { filas, total };
+  }, [filtrados]);
+
   useEffect(() => { setPagina(1); }, [archivoActivo, busqueda, fechaDesde, fechaHasta]);
 
   useEffect(() => {
@@ -312,6 +340,47 @@ export default function Cuadre({ avisar }) {
                 <div className="cuadre-total gasto"><span>Gastos</span><strong>{dinero(totales.gasto)}</strong></div>
                 <div className={'cuadre-total' + (totales.saldo < 0 ? ' gasto' : ' ingreso')}><span>Saldo</span><strong>{dinero(totales.saldo)}</strong></div>
                 <div className="cuadre-total"><span>Movimientos</span><strong>{totales.cantidad}</strong></div>
+              </div>
+
+              <div className="cuadre-comprobados">
+                <h3>✅ Totales por fecha (Comprobado)</h3>
+                {totalesComprobados.filas.length === 0 ? (
+                  <p className="hint">Aún no hay movimientos marcados como Comprobado para esta selección.</p>
+                ) : (
+                  <div className="tabla">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Movimientos</th>
+                          <th>Ingresos</th>
+                          <th>Gastos</th>
+                          <th>Saldo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {totalesComprobados.filas.map((g) => (
+                          <tr key={g.fecha}>
+                            <td data-label="Fecha">{fechaBonita(g.fecha)}</td>
+                            <td data-label="Movimientos">{g.cantidad}</td>
+                            <td data-label="Ingresos" className="cuadre-monto ingreso">{dinero(g.ingreso)}</td>
+                            <td data-label="Gastos" className="cuadre-monto gasto">{dinero(g.gasto)}</td>
+                            <td data-label="Saldo" className="cuadre-monto">{dinero(g.saldo)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td data-label="Total">Total</td>
+                          <td data-label="Movimientos">{totalesComprobados.total.cantidad}</td>
+                          <td data-label="Ingresos" className="cuadre-monto ingreso">{dinero(totalesComprobados.total.ingreso)}</td>
+                          <td data-label="Gastos" className="cuadre-monto gasto">{dinero(totalesComprobados.total.gasto)}</td>
+                          <td data-label="Saldo" className="cuadre-monto">{dinero(totalesComprobados.total.saldo)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {filtrados.length === 0 ? (
