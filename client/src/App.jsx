@@ -19,16 +19,15 @@ import SplashBienvenida from './components/SplashBienvenida.jsx';
 
 // Pestaña inicial según tipo de usuario
 function tabInicial(rol) {
-  if (rol === 'registro') return 'registro';
   if (rol === 'entregas') return 'entregas';
-  return 'config';
+  return 'registro';
 }
 
 export default function App() {
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [mostrarBienvenida, setMostrarBienvenida] = useState(true);
-  const [tab, setTab] = useState('config');
+  const [tab, setTab] = useState('registro');
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [navAbierto, setNavAbierto] = useState(false);
   const [fardos, setFardos] = useState([]);
@@ -85,11 +84,24 @@ export default function App() {
   const salir = async () => {
     await api.post('/api/logout', {});
     setSesion(null);
+    setTab('registro');
     setMostrarBienvenida(true);
   };
 
   if (mostrarBienvenida) {
-    return <SplashBienvenida onDone={() => setMostrarBienvenida(false)} />;
+    return (
+      <SplashBienvenida
+        onDone={() => {
+          if (sesion) {
+            const r = obtenerRol(sesion.user, sesion.profile);
+            setTab(r === 'entregas' ? 'entregas' : 'registro');
+          } else {
+            setTab('registro');
+          }
+          setMostrarBienvenida(false);
+        }}
+      />
+    );
   }
 
   if (cargando) return <div className="app"><p>Cargando...</p></div>;
