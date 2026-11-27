@@ -211,13 +211,8 @@ export default function Ventas({ fardos, avisar }) {
     const venta = editando && editando.venta;
     if (!venta) return;
     const montoNum = Number(pagoMonto);
-    const saldo = Number(venta.saldo || 0);
     if (!Number.isFinite(montoNum) || montoNum <= 0) {
       avisar('error', 'Ingresa un monto de abono válido.');
-      return;
-    }
-    if (montoNum > saldo + 0.005) {
-      avisar('error', 'El monto supera el saldo pendiente (Bs ' + dinero(saldo) + ').');
       return;
     }
     setGuardandoPago(true);
@@ -238,6 +233,36 @@ export default function Ventas({ fardos, avisar }) {
       } else {
         avisar('exito', 'Abono registrado. Saldo pendiente: Bs ' + dinero(r.saldo));
       }
+    } catch (err) {
+      avisar('error', err.message);
+    } finally {
+      setGuardandoPago(false);
+    }
+  };
+
+  // Cierra la deuda por completo y deja la venta en estado "Pendiente de Entrega".
+  const cerrarDeuda = async () => {
+    const venta = editando && editando.venta;
+    if (!venta) return;
+    const saldo = Number(venta.saldo || 0);
+    setGuardandoPago(true);
+    try {
+      if (saldo > 0) {
+        await api.post('/api/pagos-venta', {
+          venta_id: venta.id,
+          fecha_pago: pagoFecha || hoyISO(),
+          monto: saldo,
+          nota: pagoNota || 'Cierre de deuda'
+        });
+      }
+      await api.post('/api/ventas/' + venta.id + '/estado', { estado: 'P' });
+      setPagoMonto('');
+      setPagoNota('');
+      setForm((f) => ({ ...f, estado: 'P' }));
+      const lista = await cargar(fardoId, true);
+      const actualizado = (lista || []).find((x) => x.id === editando.id);
+      if (actualizado) setEditando(actualizado);
+      avisar('exito', 'Deuda cerrada. Estado: Pendiente de Entrega.');
     } catch (err) {
       avisar('error', err.message);
     } finally {
@@ -604,10 +629,9 @@ export default function Ventas({ fardos, avisar }) {
                     <label>Monto a abonar</label>
                     <input
                       type="number" min="0.01" step="0.01"
-                      max={Number(editando.venta.saldo) || undefined}
                       value={pagoMonto}
                       onChange={(e) => setPagoMonto(e.target.value)}
-                      placeholder={'Máx. Bs ' + dinero(editando.venta.saldo)}
+                      placeholder="Ej: 100.00"
                       required
                     />
                   </div>
@@ -619,15 +643,22 @@ export default function Ventas({ fardos, avisar }) {
                     <button className="btn-entregar" disabled={guardandoPago || !pagosTabla}>
                       {guardandoPago ? 'Registrando...' : '💵 Registrar abono'}
                     </button>{' '}
-                    <button type="button" onClick={() => setPagoMonto(dinero(editando.venta.saldo))}>
-                      Abonar saldo total
+                    <button type="button" className="btn-blue" disabled={guardandoPago || !pagosTabla} onClick={cerrarDeuda}>
+                      🔒 Cerrar Deuda
                     </button>
                   </div>
                 </form>
               ) : (
-                <p className="success" style={{ margin: '6px 0' }}>
-                  ✅ Deuda saldada. Cambia el estado a P (Pendiente de Entrega) o E (Entregado) según corresponda y pulsa <strong>Guardar venta</strong>.
-                </p>
+                <>
+                  <p className="success" style={{ margin: '6px 0' }}>
+                    ✅ Deuda saldada.
+                  </p>
+                  {editando.venta.estado !== 'P' && (
+                    <button type="button" className="btn-blue" disabled={guardandoPago} onClick={cerrarDeuda}>
+                      🔒 Cerrar Deuda
+                    </button>
+                  )}
+                </>
               )}
 
               {(editando.venta.pagos || []).length > 0 && (

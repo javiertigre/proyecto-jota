@@ -1748,9 +1748,7 @@ async function route(method, rawPath, body) {
     const abonadoPrevio = (pagosPrevios || []).reduce((s, p) => s + (Number(p.monto) || 0), 0);
     const saldoPrevio = calcularSaldo(venta.precio_venta, venta.deposito_cliente, abonadoPrevio);
     if (saldoPrevio <= 0) throw new Error('Esta venta ya no tiene saldo pendiente.');
-    if (montoNum > saldoPrevio + 0.005) {
-      throw new Error('El monto (Bs ' + redondear2(montoNum).toFixed(2) + ') supera el saldo pendiente (Bs ' + saldoPrevio.toFixed(2) + ').');
-    }
+    // El monto del abono no tiene restricciones: puede ser menor o mayor al precio de venta.
 
     const { data, error } = await supabase.from('pagos_venta').insert({
       venta_id,

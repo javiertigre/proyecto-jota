@@ -48,6 +48,8 @@ export default function ReporteVentas({ avisar }) {
 
   const grupos = agruparPorFardo(items);
   const totalOriginal = items.reduce((s, it) => s + (Number(it.precio_original) || 0), 0);
+  // TOTAL DEPÓSITO = depósitos de las ventas + cobranza de deudas (abonos)
+  const totalDepositoCobrado = (Number(totDep) || 0) + (Number(totCob) || 0);
   const hastaEfectivo = hasta && hasta >= desde ? hasta : desde;
 
   const buscar = async (e) => {
@@ -111,7 +113,7 @@ export default function ReporteVentas({ avisar }) {
       ['Fecha venta', 'Código', 'Fardo', 'Precio original', 'Precio venta', 'Depósito', 'Cliente', 'Celular', 'Ciudad', 'Estado', 'Ubicación', 'Observación', 'F. entrega'],
       ...filasDatos,
       [],
-      ['', '', 'TOTAL GENERAL (' + items.length + ' ventas)', totalOriginal, totVen, totDep],
+      ['', '', 'TOTAL GENERAL (' + items.length + ' ventas)', totalOriginal, totVen, totalDepositoCobrado],
       ...(pagos.length ? [
         [],
         ['COBRANZA DE DEUDAS POR FECHA DE PAGO'],
@@ -173,7 +175,7 @@ export default function ReporteVentas({ avisar }) {
       + '</style></head><body>'
       + '<div class="cabecera"><img class="logo-rep" src="/JC.jpeg" /><div class="tit"><h1>REPORTE DE VENTAS POR FECHAS</h1><h3>CAPRICORNIO DETALLES</h3><p class="sub">' + escH(rangoTxt) + ' · ' + grupos.length + ' fardo' + (grupos.length === 1 ? '' : 's') + '</p></div></div>'
       + '<table><thead><tr><th>F. venta</th><th>Código</th><th>Fardo</th><th>P. orig.</th><th>P. venta</th><th>Depósito</th><th>Cliente</th><th>Celular</th><th>Ciudad</th><th>Estado</th><th>Ubicación</th><th>Observación</th><th>F. entrega</th></tr></thead><tbody>' + filas + '</tbody>'
-      + '<tfoot><tr class="tot"><td colspan="3">TOTAL GENERAL (' + items.length + ' ventas)</td><td>' + escH(totalOriginal) + '</td><td>' + escH(totVen) + '</td><td>' + escH(totDep) + '</td><td colspan="7"></td></tr></tfoot></table>'
+      + '<tfoot><tr class="tot"><td colspan="3">TOTAL GENERAL (' + items.length + ' ventas)</td><td>' + escH(totalOriginal) + '</td><td>' + escH(totVen) + '</td><td>' + escH(totalDepositoCobrado) + '</td><td colspan="7"></td></tr></tfoot></table>'
       + cobranzaHtml
       + '<p class="no-print"><button onclick="window.print()">Imprimir / Guardar PDF</button></p>'
       + '</body></html>');
@@ -267,7 +269,8 @@ export default function ReporteVentas({ avisar }) {
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '10px 0 4px' }}>
                 <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 16px', minWidth: 180 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total Depósito</div>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: '#b45309' }}>Bs {Number(totDep).toFixed(2)}</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#b45309' }}>Bs {totalDepositoCobrado.toFixed(2)}</div>
+                  <div style={{ fontSize: 11, color: '#92400e' }}>Depósitos + cobranza</div>
                 </div>
                 <div style={{ background: '#dcfce7', border: '1px solid #86efac', borderRadius: 10, padding: '10px 16px', minWidth: 180 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: '#166534', textTransform: 'uppercase', letterSpacing: '.04em' }}>Total Precio Venta</div>
@@ -328,13 +331,13 @@ export default function ReporteVentas({ avisar }) {
                       <td colSpan="3"><strong>TOTAL GENERAL ({items.length} ventas)</strong></td>
                       <td data-label="P. orig. total"><strong>{totalOriginal}</strong></td>
                       <td data-label="P. venta total"><strong>{Number(totVen).toFixed(2)}</strong></td>
-                      <td data-label="Depósito total"><strong style={{ color: '#b45309' }}>Bs {Number(totDep).toFixed(2)}</strong></td>
+                      <td data-label="Depósito total"><strong style={{ color: '#b45309' }}>Bs {totalDepositoCobrado.toFixed(2)}</strong></td>
                       <td colSpan="7"></td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
-              <p className="hint">Agrupado por tipo de fardo y ordenado por código · Total Depósito: <strong>Bs {Number(totDep).toFixed(2)}</strong> · Total Precio venta: <strong>Bs {Number(totVen).toFixed(2)}</strong></p>
+              <p className="hint">Agrupado por tipo de fardo y ordenado por código · Total Depósito (depósitos + cobranza): <strong>Bs {totalDepositoCobrado.toFixed(2)}</strong> · Total Precio venta: <strong>Bs {Number(totVen).toFixed(2)}</strong></p>
             </>
           )}
         </div>
