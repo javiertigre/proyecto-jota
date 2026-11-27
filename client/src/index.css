@@ -549,6 +549,53 @@ tfoot td { background: #fef9c3; font-weight: 800; }
 .auth-wrap input { margin: 8px 0; }
 .auth-wrap .btn-primary { margin-top: 8px; }
 
+/* Login con el tigre de fondo: el logo, las letras y el botón van encima */
+.auth-wrap.auth-tigre {
+  position: fixed; inset: 0; z-index: 9998;
+  max-width: none; margin: 0;
+  padding: 24px 16px;
+  display: flex; align-items: center; justify-content: center;
+  overflow-y: auto;
+  background: #000 url('/Tigres/Tigre6.jpeg') center 28% / cover no-repeat;
+}
+.auth-wrap.auth-tigre::before {
+  content: ''; position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at center, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0.5) 58%, rgba(0, 0, 0, 0.88) 100%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.45) 0%, transparent 28%, transparent 62%, rgba(0, 0, 0, 0.88) 100%);
+  pointer-events: none;
+}
+.auth-wrap.auth-tigre .auth-card {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 400px;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 40px rgba(250, 204, 21, 0.18);
+  color: #f8fafc;
+}
+.auth-wrap.auth-tigre .auth-card img {
+  border: 3px solid rgba(250, 204, 21, 0.8);
+  box-shadow: 0 0 24px rgba(250, 204, 21, 0.55);
+}
+.auth-wrap.auth-tigre .auth-card h1 { color: #fff; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
+.auth-wrap.auth-tigre .auth-card p.sub { color: rgba(255, 255, 255, 0.82); }
+.auth-wrap.auth-tigre .auth-card p.sub strong { color: #fde047; }
+.auth-wrap.auth-tigre .hint { color: rgba(255, 255, 255, 0.72); }
+.auth-wrap.auth-tigre .error {
+  background: rgba(127, 29, 29, 0.8);
+  color: #fff; border: 1px solid rgba(248, 113, 113, 0.65);
+}
+.auth-wrap.auth-tigre .btn-primary {
+  background: linear-gradient(135deg, #fde047 0%, #eab308 55%, #ca8a04 100%);
+  color: #1c1917; font-weight: 800;
+  box-shadow: 0 8px 22px rgba(234, 179, 8, 0.35);
+}
+.auth-wrap.auth-tigre .btn-primary:hover {
+  background: linear-gradient(135deg, #fef08a 0%, #facc15 55%, #eab308 100%);
+}
+
 /* ===== Paginación ===== */
 .paginacion { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
 .paginacion button { background: #fff; border: 1.5px solid var(--line); padding: 10px 14px; min-width: 44px; }

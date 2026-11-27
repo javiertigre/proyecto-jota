@@ -43,9 +43,9 @@ export default function SplashBienvenida({ onDone }) {
       role="dialog"
       aria-label='Bienvenido al Sistema de su tienda Virtual "Jota Capri"'
     >
-      {/* Fondo con cara de tigre real y degradé en amarillo y negro */}
+      {/* Fondo con la cara de tigre (imagen de inicio) */}
       <div className="splash-fondo-tigre" aria-hidden="true">
-        <img src="/tigre2.jpg" alt="" />
+        <img src="/Tigres/Tigre6.jpeg" alt="" />
         <div className="splash-fondo-overlay" />
       </div>
 

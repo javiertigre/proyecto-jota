@@ -170,29 +170,30 @@ async function siguienteCorrelativo(fardo_id) {
 
 const esLaPaz = (ciudad) => String(ciudad || '').trim().toUpperCase() === 'LA PAZ';
 
+// Mensaje único cuando el usuario no tiene una cuenta autorizada en el sistema.
+const MSG_SIN_ACCESO = 'Usted no tiene Acceso para ingresar al Sistema, comuníquese con el Administrador del Sistema.';
+
 // ---------- Auth ----------
 async function me() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('No autenticado.');
-  let { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-  // Auto-reparación: si el usuario no tiene fila en profiles, crearla con rol admin
+
+  // Verificar que el usuario autenticado tenga una cuenta autorizada (fila en profiles).
+  // Solo el Administrador del Sistema puede crear cuentas (módulo Administrar Cuentas).
+  const { data: filas, error: perfilError } = await supabase
+    .from('profiles').select('*').eq('id', user.id).limit(1);
+  if (perfilError) throw new Error(perfilError.message);
+
+  const profile = (filas && filas[0]) || null;
   if (!profile) {
-    const base = { id: user.id, full_name: user.user_metadata?.full_name || '', email: user.email || '' };
-    try {
-      const r = await supabase.from('profiles').upsert({ ...base, rol: 'admin' }).select().single();
-      if (!r.error) profile = r.data;
-    } catch { /* columnas aún no creadas: intenta mínimo */ }
-    if (!profile) {
-      try {
-        const r2 = await supabase.from('profiles').upsert(base).select().single();
-        if (!r2.error) profile = r2.data;
-      } catch { /* RLS o tabla sin permiso: se muestra sin perfil */ }
-    }
+    // Sin cuenta autorizada: cerrar la sesión y negar el ingreso.
+    try { await supabase.auth.signOut(); } catch { /* silencioso */ }
+    throw new Error(MSG_SIN_ACCESO);
   }
 
   // Asegurar que la cuenta administradora o de Javier tenga rol 'admin' y no quede bloqueada en 'registro'
   const emailLower = String(user.email || '').toLowerCase();
-  if (profile && (profile.rol === 'registro' || !profile.rol)) {
+  if (profile.rol === 'registro' || !profile.rol) {
     if (emailLower.includes('javier') || emailLower.includes('admin') || !profile.rol) {
       profile.rol = 'admin';
       try {
@@ -201,7 +202,7 @@ async function me() {
     }
   }
 
-  return { user, profile: profile || { rol: 'admin' } };
+  return { user, profile };
 }
 
 // ---------- Router: misma interfaz /api/... ----------
@@ -213,17 +214,14 @@ async function route(method, rawPath, body) {
 
   // ----- Auth -----
   if (method === 'POST' && path === '/api/register') {
-    const { email, password, full_name } = body || {};
-    const { data, error } = await supabase.auth.signUp({
-      email, password, options: { data: { full_name } }
-    });
-    if (error) throw new Error(error.message);
-    return { ok: true, user: data.user };
+    // El registro público está deshabilitado: las cuentas las crea el Administrador del Sistema.
+    throw new Error(MSG_SIN_ACCESO);
   }
   if (method === 'POST' && path === '/api/login') {
     const { email, password } = body || {};
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
+    // Si las credenciales no corresponden a una cuenta autorizada, se niega el acceso.
+    if (error) throw new Error(MSG_SIN_ACCESO);
     return { ok: true, user: data.user };
   }
   if (method === 'POST' && path === '/api/logout') {

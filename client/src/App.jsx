@@ -26,6 +26,7 @@ function tabInicial(rol) {
 export default function App() {
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [authError, setAuthError] = useState(null);
   const [mostrarBienvenida, setMostrarBienvenida] = useState(true);
   const [tab, setTab] = useState('registro');
   const [menuAbierto, setMenuAbierto] = useState(false);
@@ -63,7 +64,11 @@ export default function App() {
         setTab(tabInicial(obtenerRol(me.user, me.profile)));
         cargarDatos();
       })
-      .catch(() => setSesion(null))
+      .catch((err) => {
+        setSesion(null);
+        // Si había una sesión pero la cuenta no está autorizada, mostrar el aviso en el Login.
+        if (err && err.message && err.message !== 'No autenticado.') setAuthError(err.message);
+      })
       .finally(() => setCargando(false));
   }, []);
 
@@ -84,6 +89,7 @@ export default function App() {
   const salir = async () => {
     await api.post('/api/logout', {});
     setSesion(null);
+    setAuthError(null);
     setTab('registro');
     setMostrarBienvenida(true);
   };
@@ -105,7 +111,7 @@ export default function App() {
   }
 
   if (cargando) return <div className="app"><p>Cargando...</p></div>;
-  if (!sesion) return <div className="app"><Login onAuth={(me) => { setSesion(me); setTab(tabInicial(obtenerRol(me.user, me.profile))); cargarDatos(); }} /></div>;
+  if (!sesion) return <div className="app"><Login mensajeInicial={authError} onAuth={(me) => { setAuthError(null); setSesion(me); setTab(tabInicial(obtenerRol(me.user, me.profile))); cargarDatos(); }} /></div>;
 
   // Tipo de usuario: admin (todo), registro (solo Registro), entregas (solo Entregas)
   const rol = obtenerRol(sesion.user, sesion.profile);
